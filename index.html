@@ -28,13 +28,14 @@
     <div class="viewer" id="viewer">
       <canvas id="cv" tabindex="0" role="img" aria-label="Котик в выбранных цветах. Тяните влево или вправо, чтобы повернуть, нажмите на деталь, чтобы выбрать её. Стрелки на клавиатуре тоже поворачивают."></canvas>
       <div class="loader" id="loader" aria-hidden="true"><div class="bar"><i id="bar"></i></div><span id="loadtxt">Загружаем котика…</span></div>
-      <div class="hint" id="hint">⟷ Крутите котика · нажмите на деталь</div>
+      <div class="hint" id="hint"><span class="hl">⟷ Крутите котика · нажмите на деталь</span><span class="hs">⟷ Крутите · нажмите на деталь</span></div>
       <div class="tip" id="tip" hidden></div>
       <div class="vbtns">
         <button type="button" class="icon" id="spin" aria-pressed="true" title="Автоповорот"><span aria-hidden="true">❚❚</span><span class="sr">Автоповорот</span></button>
         <button type="button" class="icon" id="front" title="Лицом к вам"><span aria-hidden="true">◉</span><span class="sr">Повернуть лицом</span></button>
       </div>
-      <div class="vmsg" id="vmsg" hidden><p id="vmsgtxt"></p><button type="button" class="secondary" id="vmsgbtn" hidden></button></div>
+      <div class="vmsg" id="vmsg" hidden><div class="vmsgin"><p id="vmsgtxt"></p><button type="button" class="secondary" id="vmsgbtn" hidden></button></div></div>
+      <p class="sr" id="vlive" role="status"></p>
     </div>
   </section>
 
@@ -72,9 +73,10 @@
   <details>
     <summary>Есть код расцветки?</summary>
     <form id="codeform" class="codeform" autocomplete="off">
-      <input id="codein" placeholder="Например, KKWWBPPO" aria-label="Код расцветки" spellcheck="false" autocapitalize="characters" autocorrect="off">
+      <input id="codein" placeholder="Например, KKWWBPPO" aria-label="Код расцветки" aria-describedby="codeerr" spellcheck="false" autocapitalize="characters" autocorrect="off">
       <button type="submit" class="secondary">Показать</button>
     </form>
+    <p class="codeerr" id="codeerr" role="alert"></p>
   </details>
   <p>Цвета на экране примерные: они подобраны по фото производителей пластика, вживую оттенок может немного отличаться.</p>
   <p id="materials"></p>

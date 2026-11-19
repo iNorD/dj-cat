@@ -33,6 +33,8 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+/* the viewer clips everything outside it, so the cat's focus ring is drawn inside */
+.viewer canvas:focus-visible { outline-offset: -3px; }
 
 .top { padding-top: 18px; padding-bottom: 6px; }
 .top h1 { margin: 0 0 4px; font-size: 24px; line-height: 1.2; letter-spacing: -0.01em; }
@@ -73,6 +75,7 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
   display: block;
   width: 100%;
   height: 100%;
+  border-radius: inherit;
   touch-action: pan-y;
   cursor: grab;
   -webkit-tap-highlight-color: transparent;
@@ -82,7 +85,7 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
 .viewer canvas.dragging { cursor: grabbing; }
 
 .loader {
-  position: absolute; inset: 0;
+  position: absolute; top: 0; right: 0; bottom: 0; left: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
   font-size: 13px; color: var(--muted);
   transition: opacity 0.4s;
@@ -90,10 +93,11 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
 }
 .loader .bar { width: 120px; height: 4px; border-radius: 4px; background: rgba(0, 0, 0, 0.08); overflow: hidden; }
 .loader .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.2s; }
-/* once the cat is on screen, only a thin line along the top edge stays */
-.loader.started { inset: 0 0 auto; display: block; }
+/* once the cat is on screen, only a thin line along the top edge stays,
+   on its straight part: the rounded corners would hide the start of it */
+.loader.started { bottom: auto; left: var(--radius); right: var(--radius); display: block; }
 .loader.started span { display: none; }
-.loader.started .bar { width: 100%; height: 3px; border-radius: 0; background: transparent; }
+.loader.started .bar { width: 100%; height: 3px; border-radius: 0 0 3px 3px; background: rgba(0, 0, 0, 0.07); }
 .loader.done { opacity: 0; }
 
 .hint {
@@ -109,6 +113,10 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
   opacity: 0;
 }
 .hint.show { opacity: 1; }
+.hint .hs { display: none; }
+.hint.small { max-width: calc(100% - 12px); font-size: 11px; padding: 3px 7px; bottom: 6px; }
+.hint.small .hl { display: none; }
+.hint.small .hs { display: inline; }
 
 .tip {
   position: absolute; z-index: 2;
@@ -131,7 +139,7 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
 }
 .icon::before {
   content: "";
-  position: absolute; inset: 4px;
+  position: absolute; top: 4px; right: 4px; bottom: 4px; left: 4px;
   border-radius: 50%;
   border: 1px solid var(--line); background: rgba(255, 255, 255, 0.9);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
@@ -143,12 +151,21 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
 
 /* no 3D, the GPU was taken away or the frames did not load */
 .vmsg {
-  position: absolute; inset: 0;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  position: absolute; top: 0; right: 0; bottom: 0; left: 0;
+  display: flex;
+  overflow-y: auto; overscroll-behavior: contain;
   padding: 20px; text-align: center;
   font-size: 14px; color: var(--ink);
 }
+/* auto margins center the text while it fits; a longer one starts at the top and scrolls */
+.vmsgin { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .vmsg p { margin: 0; max-width: 28ch; }
+.vmsg.compact { padding: 8px 6px; font-size: 12px; line-height: 1.3; }
+.vmsg.compact .vmsgin { gap: 6px; }
+.vmsg.compact .secondary { padding: 6px 12px; font-size: 13px; border-radius: 10px; }
+.vmsg.compact.tiny { padding: 2px 4px; font-size: 11px; line-height: 1.25; }
+.vmsg.compact.tiny .vmsgin { gap: 4px; }
+.vmsg.compact.tiny .secondary { padding: 4px 10px; font-size: 12px; }
 .viewer.off canvas, .viewer.off .loader, .viewer.off .hint, .viewer.off .tip, .viewer.off .vbtns { visibility: hidden; }
 
 /* ---------- panel ---------- */
@@ -181,7 +198,7 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
   font-size: 12px; line-height: 1.2;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
-.preset canvas, .preset .dice {
+.preset .thumb, .preset .dice {
   width: 72px; height: 110px;
   border-radius: 10px;
   background: var(--stage);
@@ -204,17 +221,18 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
 .chip[aria-selected="true"] { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
 
 .palette-head {
-  display: flex; align-items: center; justify-content: space-between; gap: 0 10px; flex-wrap: wrap;
+  display: flex; align-items: center; justify-content: space-between; column-gap: 10px;
   min-height: 40px;
   margin: 6px 0 4px; font-size: 14px;
 }
-.palette-head #palTitle { font-weight: 600; }
+.palette-head #palTitle { flex: 1 1 auto; min-width: 0; font-weight: 600; line-height: 1.25; }
 .link {
+  flex: 0 1 auto; max-width: 50%;
   display: inline-flex; align-items: center; gap: 8px;
   min-height: 40px; padding: 0 4px; margin-right: -4px;
-  color: var(--muted); font-size: 13px; cursor: pointer;
+  color: var(--muted); font-size: 13px; line-height: 1.25; cursor: pointer;
 }
-.link input { width: 20px; height: 20px; accent-color: var(--accent); margin: 0; }
+.link input { flex: none; width: 20px; height: 20px; accent-color: var(--accent); margin: 0; }
 
 .palette { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .swatch {
@@ -274,10 +292,14 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
   background: var(--card); color: var(--ink);
 }
 .codeform input::placeholder { text-transform: none; letter-spacing: normal; font-weight: 400; }
+.codeform input[aria-invalid="true"] { border-color: #b3261e; }
+.codeerr { margin: 6px 0 0; color: #b3261e; font-size: 13px; }
+.codeerr:empty { margin: 0; }
 
 .toast {
   position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom));
   transform: translate(-50%, 20px);
+  width: max-content;
   max-width: calc(100vw - 32px);
   background: var(--ink); color: #fff;
   padding: 10px 14px; border-radius: 12px;

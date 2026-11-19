@@ -119,25 +119,31 @@
     return s;
   }
 
+  // The preset thumbnails are pictures, not canvases: the system may wipe canvases along with the GPU.
+  const thumbDpr = Math.min(window.devicePixelRatio || 1, 2);
+  const thumbW = Math.round(72 * thumbDpr);
+  const thumbH = Math.round(110 * thumbDpr);
+  const thumbCanvas = document.createElement('canvas');
+  thumbCanvas.width = thumbW;
+  thumbCanvas.height = thumbH;
+
   function buildPresets() {
     const box = $('presets');
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     PRESETS.forEach((p) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'preset';
       b.setAttribute('aria-pressed', 'false');
-      const c = document.createElement('canvas');
-      c.width = Math.round(72 * dpr);
-      c.height = Math.round(110 * dpr);
-      c.setAttribute('aria-hidden', 'true');
-      b.appendChild(c);
+      const im = document.createElement('img');
+      im.alt = '';
+      im.className = 'thumb';
+      b.appendChild(im);
       const s = document.createElement('span');
       s.textContent = p.name;
       b.appendChild(s);
       b.addEventListener('click', () => { applyCode(p.code); stopHint(); });
       p.btn = b;
-      p.canvas = c;
+      p.img = im;
       box.appendChild(b);
     });
     const r = document.createElement('button');
@@ -170,11 +176,24 @@
     });
   }
 
+  // Parts and colors work as tabs and radio buttons: only the chosen one is a Tab stop,
+  // the arrow keys move along the row.
   function renderParts() {
     PARTS.forEach((p) => {
       p.chip.setAttribute('aria-selected', String(p.key === sel));
+      p.chip.tabIndex = p.key === sel ? 0 : -1;
       p.chip.firstChild.style.background = COLORS[colors[p.key]].hex;
     });
+  }
+
+  function arrowStep(e, n, i, vertical) {
+    if (e.altKey || e.ctrlKey || e.metaKey) return -1;
+    const k = e.key;
+    if (k === 'ArrowRight' || (vertical && k === 'ArrowDown')) return (i + 1) % n;
+    if (k === 'ArrowLeft' || (vertical && k === 'ArrowUp')) return (i - 1 + n) % n;
+    if (k === 'Home') return 0;
+    if (k === 'End') return n - 1;
+    return -1;
   }
 
   // The swatches are built once and only re-marked, so a pressed one keeps the keyboard focus.
@@ -212,7 +231,10 @@
     } else {
       lw.hidden = true;
     }
-    ORDER.forEach((letter) => swatches[letter].setAttribute('aria-checked', String(colors[sel] === letter)));
+    ORDER.forEach((letter) => {
+      swatches[letter].setAttribute('aria-checked', String(colors[sel] === letter));
+      swatches[letter].tabIndex = colors[sel] === letter ? 0 : -1;
+    });
   }
 
   function renderSummary() {
@@ -266,7 +288,8 @@
     t.textContent = msg;
     t.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
+    // a long message stays longer, so there is time to read it
+    toastTimer = setTimeout(() => t.classList.remove('show'), clamp(msg.length * 60, 2800, 6000));
   }
 
   async function copyText(text) {
@@ -325,11 +348,18 @@
       const ok = await copyText(url);
       toast(ok ? 'Ссылка скопирована' : url);
     });
+    // A wrong code is explained under the field: a toast would hide behind the phone keyboard.
+    const codeErr = (msg) => {
+      $('codeerr').textContent = msg;
+      if (msg) $('codein').setAttribute('aria-invalid', 'true'); else $('codein').removeAttribute('aria-invalid');
+    };
+    $('codein').addEventListener('input', () => { if ($('codeerr').textContent) codeErr(''); });
     $('codeform').addEventListener('submit', (e) => {
       e.preventDefault();
       const inp = $('codein');
       const c = parseCode(inp.value);
-      if (!c) { toast('Код расцветки: 8 латинских букв из W, B, P, Y, K, O, например KKWWBPPO'); return; }
+      if (!c) { codeErr('Нужен код из 8 латинских букв W, B, P, Y, K, O, например KKWWBPPO.'); return; }
+      codeErr('');
       inp.value = c;
       inp.blur();
       applyCode(c);
@@ -341,6 +371,24 @@
       if (c && c !== codeOf()) applyCode(c, { keepHash: true });
     });
     $('vmsgbtn').addEventListener('click', () => { if (msgAction) msgAction(); });
+    $('parts').addEventListener('keydown', (e) => {
+      const i = PARTS.findIndex((p) => p.chip === document.activeElement);
+      if (i < 0) return;
+      const j = arrowStep(e, PARTS.length, i, false);
+      if (j < 0) return;
+      e.preventDefault();
+      selectPart(PARTS[j].key, false);
+      PARTS[j].chip.focus();
+    });
+    $('palette').addEventListener('keydown', (e) => {
+      const i = ORDER.findIndex((l) => swatches[l] === document.activeElement);
+      if (i < 0) return;
+      const j = arrowStep(e, ORDER.length, i, true);
+      if (j < 0) return;
+      e.preventDefault();
+      swatches[ORDER[j]].click();
+      swatches[ORDER[j]].focus();
+    });
     const groups = {};
     ORDER.forEach((l) => {
       const c = COLORS[l];
@@ -355,20 +403,40 @@
   let msgAction = null;
   function showMsg(kind, text, btn, action) {
     if (msgKind === 'lost' && kind !== 'lost') return;
-    msgKind = kind;
     msgAction = action || null;
+    if (msgKind === kind && !$('vmsg').hidden) return; // already on screen and announced
+    msgKind = kind;
     $('vmsgtxt').textContent = text;
     $('vmsgbtn').textContent = btn || '';
     $('vmsgbtn').hidden = !btn;
     $('vmsg').hidden = false;
+    $('vlive').textContent = text;
+    // the cat and its buttons get hidden: the keyboard focus goes to the message button
+    const f = document.activeElement;
+    const inViewer = f && f !== $('vmsgbtn') && $('viewer').contains(f);
     $('viewer').classList.add('off');
+    if (inViewer && btn) $('vmsgbtn').focus({ preventScroll: true });
+    fitMsg();
   }
   function hideMsg(kind) {
     if (msgKind !== kind) return;
+    const hadFocus = document.activeElement === $('vmsgbtn');
     msgKind = '';
     msgAction = null;
     $('vmsg').hidden = true;
+    $('vlive').textContent = '';
     $('viewer').classList.remove('off');
+    if (hadFocus) canvas.focus({ preventScroll: true });
+  }
+  // A low viewer (a phone on its side, a large page zoom) gets smaller text; if even that does not
+  // fit, the message scrolls inside the viewer.
+  function fitMsg() {
+    const m = $('vmsg');
+    if (m.hidden) return;
+    const over = () => m.scrollHeight > m.clientHeight + 1;
+    m.classList.remove('compact', 'tiny');
+    if (over()) m.classList.add('compact');
+    if (over()) m.classList.add('tiny');
   }
 
   // ---------- WebGL viewer ----------
@@ -601,8 +669,11 @@ void main(){
   }
 
   function resize() {
+    fitMsg();
     const r = canvas.getBoundingClientRect();
     if (!r.width || !r.height) return;
+    // a low viewer gets a short hint: the long one would cover the cat
+    $('hint').classList.toggle('small', r.height < 200);
     const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
     let w = Math.round(r.width * dpr);
     let h = Math.round(r.height * dpr);
@@ -618,9 +689,32 @@ void main(){
     }
   }
 
+  // Copy a part of the WebGL picture through readPixels. Chrome may copy a context restored
+  // after a GPU crash as transparent pixels, while readPixels still sees the picture.
+  let bigCanvas = null;
+  function copyPixels(ctx, sx, sy, sw, sh) {
+    const x = Math.round(sx);
+    const y = Math.round(sy);
+    const w = Math.round(sw);
+    const h = Math.round(sh);
+    const px = new Uint8Array(w * h * 4);
+    gl.readPixels(x, canvas.height - y - h, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    if (!bigCanvas) bigCanvas = document.createElement('canvas');
+    bigCanvas.width = w;
+    bigCanvas.height = h;
+    const bctx = bigCanvas.getContext('2d');
+    const img = bctx.createImageData(w, h);
+    const row = w * 4;
+    for (let r = 0; r < h; r++) img.data.set(px.subarray((h - 1 - r) * row, (h - r) * row), r * row);
+    bctx.putImageData(img, 0, 0);
+    ctx.clearRect(0, 0, thumbW, thumbH);
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(bigCanvas, 0, 0, w, h, 0, 0, thumbW, thumbH);
+  }
+
   function renderThumbs() {
     const k = nearestLoaded(0);
-    if (!glOk || k < 0 || !canvas.width) return;
+    if (!glOk || k < 0 || !canvas.width || gl.isContextLost()) return;
     const keep = shown;
     const keepHi = [hiId, hiAmt];
     hiId = 0;
@@ -628,22 +722,33 @@ void main(){
     cur = texFor(k);
     const cw = canvas.width;
     const ch = canvas.height;
-    PRESETS.forEach((p) => {
+    const sw = cw * 0.72;
+    const sh = Math.min(ch, sw * (thumbH / thumbW));
+    const sx = cw * 0.14;
+    const sy = clamp(ch * 0.47 - sh / 2, 0, ch - sh);
+    const ctx = thumbCanvas.getContext('2d');
+    let viaPixels = false;
+    const urls = PRESETS.map((p, n) => {
       buildPalette(colorsOf(p.code));
       draw();
-      const ctx = p.canvas.getContext('2d');
-      const sw = cw * 0.72;
-      const sh = Math.min(ch, sw * (p.canvas.height / p.canvas.width));
-      const sx = cw * 0.14;
-      const sy = clamp(ch * 0.47 - sh / 2, 0, ch - sh);
-      ctx.imageSmoothingQuality = 'high';
-      ctx.drawImage(canvas, sx, sy, sw, sh, 0, 0, p.canvas.width, p.canvas.height);
+      if (!viaPixels) {
+        ctx.clearRect(0, 0, thumbW, thumbH);
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(canvas, sx, sy, sw, sh, 0, 0, thumbW, thumbH);
+        // the canvas is opaque: a transparent copy means the copy did not work
+        if (!n && !ctx.getImageData(thumbW >> 1, thumbH >> 1, 1, 1).data[3]) viaPixels = true;
+      }
+      if (viaPixels) copyPixels(ctx, sx, sy, sw, sh);
+      try { return thumbCanvas.toDataURL('image/png'); } catch (e) { return ''; }
     });
     buildPalette(colors);
     [hiId, hiAmt] = keepHi;
     if (keep >= 0) cur = texFor(keep); else shown = k;
-    thumbFrame = k;
     draw();
+    // a context lost on the way leaves empty pictures: the restored context draws them again
+    if (gl.isContextLost()) return;
+    PRESETS.forEach((p, n) => { if (urls[n]) p.img.src = urls[n]; });
+    thumbFrame = k;
   }
 
   // ---------- animation + input ----------
@@ -740,6 +845,7 @@ void main(){
 
   let pid = null;
   let sx = 0;
+  let sy = 0;
   let sAngle = 0;
   let lx = 0;
   let lt = 0;
@@ -758,14 +864,18 @@ void main(){
       dragging = true;
       moved = false;
       sx = lx = e.clientX;
+      sy = e.clientY;
       sAngle = angle;
       lt = downT = e.timeStamp;
       vel = 0;
+      // a touch of the cat with frames still missing asks for them again
+      if (failed.length) retryLoad(true);
     });
     canvas.addEventListener('pointermove', (e) => {
       if (dragging && e.pointerId === pid) {
         const dx = e.clientX - sx;
-        if (!moved && Math.abs(dx) > 6) {
+        // a finger going more down than sideways scrolls the page, as the browser decides too
+        if (!moved && Math.abs(dx) > 6 && (e.pointerType === 'mouse' || Math.abs(dx) > Math.abs(e.clientY - sy))) {
           moved = true;
           canvas.classList.add('dragging');
           tip.hidden = true;
@@ -834,7 +944,15 @@ void main(){
       cache = [];
       cur = null;
       shown = -1;
+      // a drag cut short: no spin from its speed after the restore
+      if (dragging && pid !== null) {
+        try { canvas.releasePointerCapture(pid); } catch (err) { /* ignore */ }
+      }
       dragging = false;
+      moved = false;
+      vel = 0;
+      pid = null;
+      canvas.classList.remove('dragging');
       hoverId = 0;
       tip.hidden = true;
       stopHint();
@@ -849,7 +967,8 @@ void main(){
     });
     if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);
     else window.addEventListener('resize', resize);
-    window.addEventListener('online', retryLoad);
+    window.addEventListener('online', () => retryLoad());
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) retryLoad(true); });
   }
 
   // A frame arrived or the context came back.
@@ -882,12 +1001,12 @@ void main(){
   let workers = 0;
   let loadingFront = false;
 
-  function enqueue(list) {
+  function enqueue(list, quiet) {
     list.forEach((i) => { if (!frames[i] && !queue.includes(i)) queue.push(i); });
     const z = queue.indexOf(0);
     if (z > 0) { queue.splice(z, 1); queue.unshift(0); }
     loading = true;
-    $('loader').classList.remove('done');
+    if (!quiet) $('loader').classList.remove('done');
     pump();
   }
 
@@ -903,7 +1022,8 @@ void main(){
     if (i === 0) loadingFront = false;
     workers--;
     if (ok) {
-      afterFrame();
+      // a failure here must not stop the queue
+      try { afterFrame(); } catch (e) { /* the next frame tries again */ }
     } else {
       failed.push(i);
       // one missing frame is not the connection: wait for a second failure before saying so
@@ -913,23 +1033,34 @@ void main(){
     else if (!workers) loadEnded();
   }
 
+  // Missing frames are asked for again on a timer (5, 10, 15... up to 30 s apart), when the page
+  // comes back to the screen and on a touch of the cat; these tries are quiet. The "Повторить"
+  // button and the browser coming back online try at once and show the progress.
+  let retryTimer = 0;
+  let retryAt = -1e9;
+
   function loadEnded() {
     loading = false;
     if (!failed.length) { $('loader').classList.add('done'); return; }
     if (!loadedCount) showLoadFail();
-    if (loadedCount && retries < 2) {
-      retries++;
-      setTimeout(retryLoad, 5000 * retries);
-    }
+    retries++;
+    // the line along the top goes away after two tries: it must not hang there for good
+    if (loadedCount && retries > 2) $('loader').classList.add('done');
+    clearTimeout(retryTimer);
+    retryTimer = setTimeout(() => retryLoad(true), Math.min(30000, 5000 * retries));
   }
 
-  // the "Повторить" button, the browser coming back online and two automatic tries
-  function retryLoad() {
+  function retryLoad(quiet) {
     if (!failed.length) return;
+    quiet = quiet === true;
+    if (quiet && (loading || document.hidden || navigator.onLine === false || performance.now() - retryAt < 4000)) return;
+    clearTimeout(retryTimer);
+    retryAt = performance.now();
     const list = failed;
     failed = [];
-    hideMsg('load');
-    enqueue(list);
+    if (!quiet) hideMsg('load');
+    // the first two rounds keep the line on screen anyway
+    enqueue(list, quiet);
   }
 
   // ---------- start ----------
@@ -962,14 +1093,16 @@ void main(){
   } else {
     showMsg('nogl', 'Браузер не смог включить 3D-просмотр. Цвета всё равно можно выбрать ниже, а текст для заказа скопируется как обычно.');
     $('loader').classList.add('done');
+    window.addEventListener('resize', fitMsg);
+    // without 3D the thumbnails are color stripes
+    const ctx = thumbCanvas.getContext('2d');
     PRESETS.forEach((p) => {
-      const ctx = p.canvas.getContext('2d');
-      const w = p.canvas.width;
-      const h = p.canvas.height;
+      const c = colorsOf(p.code);
       ['body', 'headphones', 'bow', 'diamond'].forEach((k, i) => {
-        ctx.fillStyle = COLORS[colorsOf(p.code)[k]].hex;
-        ctx.fillRect(0, (h / 4) * i, w, h / 4);
+        ctx.fillStyle = COLORS[c[k]].hex;
+        ctx.fillRect(0, (thumbH / 4) * i, thumbW, thumbH / 4);
       });
+      try { p.img.src = thumbCanvas.toDataURL('image/png'); } catch (e) { /* no thumbnail then */ }
     });
   }
 })();
