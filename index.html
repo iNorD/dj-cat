@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>DJ-котик: выберите цвета</title>
+<meta name="description" content="Котик в наушниках, напечатанный на 3D-принтере. Выберите готовую расцветку или цвет каждой детали и покрутите котика на 360°.">
+<meta name="theme-color" content="#F6F4F1">
+<meta property="og:type" content="website">
+<meta property="og:title" content="DJ-котик: выберите цвета">
+<meta property="og:description" content="Покрутите котика на 360° и подберите цвет каждой детали.">
+<meta property="og:image" content="og.jpg">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top wrap">
+  <h1>DJ-котик в наушниках</h1>
+  <p>Напечатаю котика в цветах, которые вы выберете. Голова сидит на пружинке и покачивается. Берите готовую расцветку или красьте каждую деталь, котика можно крутить пальцем.</p>
+</header>
+
+<main class="layout wrap">
+  <section class="stage" aria-label="Предпросмотр котика">
+    <div class="viewer" id="viewer">
+      <canvas id="cv" tabindex="0" role="img" aria-label="Котик в выбранных цветах. Тяните влево или вправо, чтобы повернуть, нажмите на деталь, чтобы выбрать её. Стрелки на клавиатуре тоже поворачивают."></canvas>
+      <div class="loader" id="loader" aria-hidden="true"><div class="bar"><i id="bar"></i></div><span id="loadtxt">Загружаем котика…</span></div>
+      <div class="hint" id="hint">⟷ Крутите котика · нажмите на деталь</div>
+      <div class="tip" id="tip" hidden></div>
+      <div class="vbtns">
+        <button type="button" class="icon" id="spin" aria-pressed="true" title="Автоповорот"><span aria-hidden="true">❚❚</span><span class="sr">Автоповорот</span></button>
+        <button type="button" class="icon" id="front" title="Лицом к вам"><span aria-hidden="true">◉</span><span class="sr">Повернуть лицом</span></button>
+      </div>
+      <p class="nogl" id="nogl" hidden>Браузер не смог включить 3D-просмотр. Цвета всё равно можно выбрать ниже, а текст для заказа скопируется как обычно.</p>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="block">
+      <h2>Готовые расцветки</h2>
+      <div class="presets" id="presets" role="list"></div>
+    </div>
+
+    <div class="block">
+      <h2>Цвет деталей</h2>
+      <div class="parts" id="parts" role="tablist" aria-label="Детали"></div>
+      <div class="palette-head"><span id="palTitle"></span><label class="link" id="linkWrap" hidden><input type="checkbox" id="link"> <span id="linkTxt"></span></label></div>
+      <div class="palette" id="palette" role="radiogroup"></div>
+    </div>
+
+    <div class="block order">
+      <h2>Ваш выбор</h2>
+      <ul class="summary" id="summary"></ul>
+      <p class="code">Код расцветки: <button type="button" id="code" class="codebtn" title="Скопировать код"></button></p>
+      <div class="actions">
+        <button type="button" class="primary" id="copy">Скопировать для чата Авито</button>
+        <button type="button" class="secondary" id="share">Поделиться ссылкой</button>
+      </div>
+      <ol class="howto">
+        <li>Выберите расцветку.</li>
+        <li>Нажмите «Скопировать для чата Авито».</li>
+        <li>Вставьте текст в чат с продавцом на Авито.</li>
+      </ol>
+    </div>
+  </section>
+</main>
+
+<footer class="wrap foot">
+  <details>
+    <summary>Есть код расцветки?</summary>
+    <form id="codeform" class="codeform" autocomplete="off">
+      <input id="codein" maxlength="8" placeholder="Например, KKWWBPPO" aria-label="Код расцветки" spellcheck="false" autocapitalize="characters">
+      <button type="submit" class="secondary">Показать</button>
+    </form>
+  </details>
+  <p>Цвета на экране примерные: они подобраны по фото производителей пластика, вживую оттенок может немного отличаться.</p>
+  <p id="materials"></p>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="app.js"></script>
+</body>
+</html>
