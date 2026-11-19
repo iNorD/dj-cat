@@ -241,6 +241,35 @@
     });
   }
 
+  // The palette head keeps the height of its tallest variant at the current width (every part with
+  // every color), so a new choice never moves the swatches under the finger. The variants are tried
+  // on the real nodes and put back within the same task: nothing is painted in between.
+  let palHeadW = -1;
+  function fitPalHead() {
+    const title = $('palTitle');
+    const head = title.parentNode;
+    const w = head.getBoundingClientRect().width;
+    if (!w || Math.abs(w - palHeadW) < 0.5) return;
+    palHeadW = w;
+    const lw = $('linkWrap');
+    const lt = $('linkTxt');
+    const keep = [title.textContent, lw.hidden, lt.textContent];
+    head.style.minHeight = '';
+    let max = 0;
+    PARTS.forEach((p) => {
+      lw.hidden = !PAIR[p.key];
+      if (PAIR[p.key]) lt.textContent = PAIR_LABEL[p.key];
+      ORDER.forEach((l) => {
+        title.textContent = `${p.name}: ${COLORS[l].name.toLowerCase()}`;
+        max = Math.max(max, head.getBoundingClientRect().height);
+      });
+    });
+    title.textContent = keep[0];
+    lw.hidden = keep[1];
+    lt.textContent = keep[2];
+    head.style.minHeight = max + 'px';
+  }
+
   function renderSummary() {
     const ul = $('summary');
     ul.textContent = '';
@@ -439,14 +468,29 @@
     if (hadFocus) canvas.focus({ preventScroll: true });
   }
   // A low viewer (a phone on its side, a large page zoom) gets smaller text; if even that does not
-  // fit, the message scrolls inside the viewer.
+  // fit, the message scrolls inside the viewer. In the narrowest one, where a word or the button
+  // label would be cut in two, the text gets smaller still and breaks long words with a hyphen.
+  function wordCut(el) {
+    if (el.hidden || !el.firstChild) return false;
+    const t = el.firstChild;
+    const re = /[^\s-]+-?/g;
+    let w;
+    while ((w = re.exec(t.textContent))) {
+      const r = document.createRange();
+      r.setStart(t, w.index);
+      r.setEnd(t, w.index + w[0].length);
+      if (new Set([...r.getClientRects()].map((q) => Math.round(q.top))).size > 1) return true;
+    }
+    return false;
+  }
   function fitMsg() {
     const m = $('vmsg');
     if (m.hidden) return;
     const over = () => m.scrollHeight > m.clientHeight + 1;
-    m.classList.remove('compact', 'tiny');
+    m.classList.remove('compact', 'tiny', 'micro');
     if (over()) m.classList.add('compact');
     if (over()) m.classList.add('tiny');
+    if (m.classList.contains('tiny') && (wordCut($('vmsgtxt')) || wordCut($('vmsgbtn')))) m.classList.add('micro');
   }
 
   // ---------- WebGL viewer ----------
@@ -878,7 +922,8 @@ void main(){
     // A touch may turn into a page scroll (touch-action: pan-y), so the spin and the hint
     // are stopped only once the gesture is a drag or a tap.
     canvas.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0 || !glOk) return;
+      // nothing on the canvas yet: a tap there (a second tap on "Повторить", say) must not stop the spin
+      if (e.button !== 0 || !glOk || shown < 0) return;
       pid = e.pointerId;
       try { canvas.setPointerCapture(pid); } catch (err) { /* ignore */ }
       dragging = true;
@@ -1104,6 +1149,9 @@ void main(){
   }
   const initial = parseCode(location.hash) || PRESETS[0].code;
   applyCode(initial, { keepHash: true });
+  fitPalHead();
+  if (window.ResizeObserver) new ResizeObserver(fitPalHead).observe($('palTitle').parentNode);
+  else window.addEventListener('resize', fitPalHead);
   const active = PRESETS.find((p) => p.code === initial);
   if (active) {
     const box = $('presets');

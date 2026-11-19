@@ -61,6 +61,9 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
   background: var(--bg);
   margin: 0 -16px;
   padding: 8px 16px 10px;
+  /* a long press next to the cat must not select the hidden hint over it (iOS) */
+  -webkit-user-select: none;
+  user-select: none;
 }
 .stage::after {
   content: "";
@@ -181,7 +184,10 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
 .vmsg.compact .secondary { padding: 6px 12px; font-size: 13px; border-radius: 10px; }
 .vmsg.compact.tiny { padding: 2px 4px; font-size: 11px; line-height: 1.25; }
 .vmsg.compact.tiny .vmsgin { gap: 4px; }
-.vmsg.compact.tiny .secondary { padding: 4px 10px; font-size: 12px; }
+.vmsg.compact.tiny .secondary { padding: 4px 6px; font-size: 11px; }
+.vmsg.compact.tiny.micro { padding: 2px; font-size: 10px; }
+.vmsg.compact.tiny.micro .secondary { padding: 3px; font-size: 10px; }
+.vmsg.compact.tiny.micro p { -webkit-hyphens: auto; hyphens: auto; }
 .viewer.off canvas, .viewer.off .loader, .viewer.off .hint, .viewer.off .tip, .viewer.off .vbtns { visibility: hidden; }
 
 /* ---------- panel ---------- */
@@ -206,6 +212,10 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
   flex: 0 0 auto;
   width: 86px;
   scroll-snap-align: start;
+  /* a long press picks the preset: no text selection and no callout on its caption (iOS) */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -291,7 +301,7 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
   border-radius: 12px; padding: 11px 16px; font-size: 15px; font-weight: 600;
   border: 1px solid transparent;
 }
-.primary { background: var(--accent); color: #fff; flex: 1 1 220px; }
+.primary { background: var(--accent); color: #fff; flex: 1 1 220px; overflow-wrap: break-word; overflow-wrap: anywhere; }
 .primary:active { filter: brightness(0.94); }
 .secondary { background: var(--card); border-color: var(--line); flex: 0 1 auto; }
 
@@ -351,10 +361,20 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
   .link { max-width: none; }
 }
 
-/* Safari before 15 has no aspect-ratio: the viewer width follows its height by hand */
+/* a page narrower than the longest button word (a zoom of 230% and more): the words break */
+@media (max-width: 179.98px) {
+  .primary, .secondary { padding-left: 8px; padding-right: 8px; overflow-wrap: break-word; overflow-wrap: anywhere; }
+}
+
+/* Safari before 15 has no aspect-ratio. Up to 900px the height is set, so the width follows it by
+   hand; from 900px the width is set, so a spacer of 125% of it gives the height, the canvas on top. */
 @supports not (aspect-ratio: 1 / 1) {
   @media (max-width: 899.98px) {
     .viewer { width: calc(min(46vh, (100vw - 32px) * 1.25) * 0.8); }
+  }
+  @media (min-width: 900px) {
+    .viewer::before { content: ""; display: block; padding-top: 125%; }
+    .viewer canvas { position: absolute; top: 0; left: 0; }
   }
 }
 
@@ -374,6 +394,25 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
   .block { margin-top: 0; margin-bottom: 18px; }
   .presets { margin: 0; padding-left: 2px; padding-right: 2px; flex-wrap: wrap; overflow: visible; }
   .order { margin-top: 4px; }
+}
+
+/* a desktop window just over 900px: three swatches in a half are too narrow for the longest color
+   word, the more so with a classic scrollbar, so two */
+@media (min-width: 900px) and (max-width: 1019.98px) {
+  .palette { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* contrast themes drop box-shadow: the chosen part, color and preset get a ring of their own,
+   apart from the focus outline */
+@media (forced-colors: active) {
+  .chip[aria-selected="true"], .swatch[aria-checked="true"], .preset[aria-pressed="true"] { position: relative; }
+  .chip[aria-selected="true"]::after, .swatch[aria-checked="true"]::after, .preset[aria-pressed="true"]::after {
+    content: "";
+    position: absolute; top: 2px; right: 2px; bottom: 2px; left: 2px;
+    border: 2px solid Highlight;
+    border-radius: inherit;
+    pointer-events: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
