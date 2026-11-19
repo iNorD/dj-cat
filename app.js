@@ -49,6 +49,7 @@
   const SMAX = 1.0;
   const SKY_D = 1.3094;
   const BACKDROP = '#EAE7E3';
+  const CACHE = 8; // frames kept on the GPU, 3.9 MB each
 
   // ---------- helpers ----------
   const $ = (id) => document.getElementById(id);
@@ -72,9 +73,18 @@
 
   const codeOf = () => PARTS.map((p) => colors[p.key]).join('');
   const colorsOf = (code) => { const c = {}; PARTS.forEach((p, i) => { c[p.key] = code[i]; }); return c; };
+
+  // Cyrillic letters typed instead of the Latin ones: look-alikes (К, В, Р, О, У)
+  // and the same keys on the Russian keyboard layout (Ц, И, З, Н, Л, Щ).
+  const CYR = { 'К': 'K', 'В': 'B', 'Р': 'P', 'О': 'O', 'У': 'Y', 'Ц': 'W', 'И': 'B', 'З': 'P', 'Н': 'Y', 'Л': 'K', 'Щ': 'O' };
   function parseCode(s) {
-    const c = String(s || '').toUpperCase().replace(/[^A-Z]/g, '');
-    return /^[WBPYKO]{8}$/.test(c) ? c : null;
+    const up = String(s || '').toUpperCase();
+    // a code inside a longer text: the copied order, a link with #CODE
+    const m = up.match(/(?:^|[^A-Z])([WBPYKO]{8})(?![A-Z])/);
+    if (m) return m[1];
+    // a code typed by hand: with spaces, zero instead of O or Cyrillic letters
+    const t = up.replace(/0/g, 'O').replace(/[^A-ZА-ЯЁ]/g, '').replace(/[КВРОУЦИЗНЛЩ]/g, (ch) => CYR[ch]);
+    return /^[WBPYKO]{8}$/.test(t) ? t : null;
   }
 
   function applyCode(code, opts = {}) {
@@ -91,7 +101,7 @@
   }
 
   function changed(opts = {}) {
-    if (gl) { buildPalette(colors); requestDraw(); }
+    if (glOk) { buildPalette(colors); dirty = true; requestDraw(); }
     renderParts();
     renderPalette();
     renderSummary();
@@ -167,6 +177,30 @@
     });
   }
 
+  // The swatches are built once and only re-marked, so a pressed one keeps the keyboard focus.
+  const swatches = {};
+  function buildSwatches() {
+    const box = $('palette');
+    ORDER.forEach((letter) => {
+      const c = COLORS[letter];
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'swatch';
+      b.setAttribute('role', 'radio');
+      b.appendChild(dot(c.hex, 'ball'));
+      const t = document.createElement('span');
+      t.className = 'txt';
+      t.innerHTML = '<span class="nm"></span><span class="mt"></span>';
+      t.firstChild.textContent = c.name;
+      t.lastChild.textContent = c.finish;
+      b.appendChild(t);
+      b.title = `${c.name}: ${c.mat}, ${c.finish}`;
+      b.addEventListener('click', () => { setColor(sel, letter); pulse(PARTS.findIndex((p) => p.key === sel) + 1); stopHint(); });
+      swatches[letter] = b;
+      box.appendChild(b);
+    });
+  }
+
   function renderPalette() {
     const part = PARTS.find((p) => p.key === sel);
     $('palTitle').textContent = `${part.name}: ${COLORS[colors[sel]].name.toLowerCase()}`;
@@ -178,26 +212,7 @@
     } else {
       lw.hidden = true;
     }
-    const box = $('palette');
-    box.textContent = '';
-    ORDER.forEach((letter) => {
-      const c = COLORS[letter];
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'swatch';
-      b.setAttribute('role', 'radio');
-      b.setAttribute('aria-checked', String(colors[sel] === letter));
-      b.appendChild(dot(c.hex, 'ball'));
-      const t = document.createElement('span');
-      t.className = 'txt';
-      t.innerHTML = '<span class="nm"></span><span class="mt"></span>';
-      t.firstChild.textContent = c.name;
-      t.lastChild.textContent = c.finish;
-      b.appendChild(t);
-      b.title = `${c.name}: ${c.mat}, ${c.finish}`;
-      b.addEventListener('click', () => { setColor(sel, letter); pulse(PARTS.findIndex((p) => p.key === sel) + 1); stopHint(); });
-      box.appendChild(b);
-    });
+    ORDER.forEach((letter) => swatches[letter].setAttribute('aria-checked', String(colors[sel] === letter)));
   }
 
   function renderSummary() {
@@ -258,6 +273,7 @@
     try {
       if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); return true; }
     } catch (e) { /* fall back below */ }
+    const prev = document.activeElement;
     const ta = document.createElement('textarea');
     ta.value = text;
     ta.setAttribute('readonly', '');
@@ -269,6 +285,10 @@
     let ok = false;
     try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
     ta.remove();
+    // the textarea took the focus; give it back to the pressed button
+    if (prev && prev !== document.body && prev.focus) {
+      try { prev.focus({ preventScroll: true }); } catch (e) { /* ignore */ }
+    }
     return ok;
   }
 
@@ -283,6 +303,7 @@
 
   function bindUI() {
     $('link').addEventListener('change', (e) => {
+      if (!PAIR[sel]) return;
       link[linkId(sel)] = e.target.checked;
       if (e.target.checked) setColor(sel, colors[sel]);
     });
@@ -306,8 +327,11 @@
     });
     $('codeform').addEventListener('submit', (e) => {
       e.preventDefault();
-      const c = parseCode($('codein').value);
-      if (!c) { toast('Код из 8 букв: W, B, P, Y, K или O'); return; }
+      const inp = $('codein');
+      const c = parseCode(inp.value);
+      if (!c) { toast('Код расцветки: 8 латинских букв из W, B, P, Y, K, O, например KKWWBPPO'); return; }
+      inp.value = c;
+      inp.blur();
       applyCode(c);
       toast('Расцветка по коду ' + c);
       window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
@@ -316,6 +340,7 @@
       const c = parseCode(location.hash);
       if (c && c !== codeOf()) applyCode(c, { keepHash: true });
     });
+    $('vmsgbtn').addEventListener('click', () => { if (msgAction) msgAction(); });
     const groups = {};
     ORDER.forEach((l) => {
       const c = COLORS[l];
@@ -325,9 +350,31 @@
     $('materials').textContent = 'Пластик: ' + Object.entries(groups).map(([k, v]) => `${v.join(', ')}: ${k}`).join('; ') + '.';
   }
 
+  // ---------- message over the viewer ----------
+  let msgKind = '';
+  let msgAction = null;
+  function showMsg(kind, text, btn, action) {
+    if (msgKind === 'lost' && kind !== 'lost') return;
+    msgKind = kind;
+    msgAction = action || null;
+    $('vmsgtxt').textContent = text;
+    $('vmsgbtn').textContent = btn || '';
+    $('vmsgbtn').hidden = !btn;
+    $('vmsg').hidden = false;
+    $('viewer').classList.add('off');
+  }
+  function hideMsg(kind) {
+    if (msgKind !== kind) return;
+    msgKind = '';
+    msgAction = null;
+    $('vmsg').hidden = true;
+    $('viewer').classList.remove('off');
+  }
+
   // ---------- WebGL viewer ----------
   const canvas = $('cv');
   let gl = null;
+  let glOk = false; // the context works and initGL() has run on it
   try {
     const attrs = { alpha: false, antialias: false, depth: false, stencil: false, premultipliedAlpha: false, preserveDrawingBuffer: false };
     gl = canvas.getContext('webgl', attrs) || canvas.getContext('experimental-webgl', attrs);
@@ -384,10 +431,28 @@ void main(){
   let vbo = null;
   let aPos = -1;
   const U = {};
-  let texDS = null;
-  let texID = null;
   let texPal = null;
   const palData = new Uint8Array(16 * 2 * 4);
+  let cache = []; // frame textures on the GPU, least recently used first
+  let cur = null; // textures of the frame on screen
+  let dirty = true; // the picture on the canvas is out of date
+
+  function mkTex(filter) {
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
+  }
+
+  // Fill the canvas with the stage color: an opaque WebGL canvas is black until something is drawn.
+  function clearStage() {
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clearColor(stage[0] / 255, stage[1] / 255, stage[2] / 255, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+  }
 
   function initGL() {
     const sh = (type, src) => {
@@ -407,18 +472,10 @@ void main(){
     vbo = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-    const mk = (filter) => {
-      const t = gl.createTexture();
-      gl.bindTexture(gl.TEXTURE_2D, t);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      return t;
-    };
-    texDS = mk(gl.LINEAR);
-    texID = mk(gl.NEAREST);
-    texPal = mk(gl.NEAREST);
+    texPal = mkTex(gl.NEAREST);
+    cache = [];
+    cur = null;
+    shown = -1;
     gl.useProgram(prog);
     gl.uniform1i(U.uDS, 0);
     gl.uniform1i(U.uID, 1);
@@ -426,6 +483,8 @@ void main(){
     gl.uniform1f(U.uHalf, 0.5 / FH);
     gl.uniform1f(U.uDMax, DMAX);
     gl.uniform1f(U.uSMax, SMAX);
+    glOk = true;
+    clearStage();
   }
 
   function buildPalette(cols) {
@@ -444,7 +503,12 @@ void main(){
   // ---------- frames ----------
   const frames = new Array(FRAMES).fill(null);
   let loadedCount = 0;
-  let shown = -1;
+  let shown = -1; // frame whose textures are in `cur`
+  let failed = [];
+  let loading = false;
+  let started = false; // the first frame is on screen
+  let thumbFrame = -1; // frame the preset thumbnails were drawn from
+  let retries = 0;
 
   const loadImg = (src) => new Promise((resolve, reject) => {
     const im = new Image();
@@ -456,15 +520,14 @@ void main(){
 
   async function loadFrame(i) {
     for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt) await sleep(700 * attempt);
       try {
         const [ds, id] = await Promise.all([loadImg(`frames/ds${pad(i)}.webp`), loadImg(`frames/id${pad(i)}.png`)]);
         frames[i] = { ds, id };
         loadedCount++;
         $('bar').style.width = Math.round((loadedCount / FRAMES) * 100) + '%';
         return true;
-      } catch (e) {
-        await sleep(600 * (attempt + 1));
-      }
+      } catch (e) { /* try again */ }
     }
     return false;
   }
@@ -481,33 +544,48 @@ void main(){
     return best;
   }
 
-  function upload(i) {
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
-    gl.bindTexture(gl.TEXTURE_2D, texDS);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, gl.LUMINANCE, gl.UNSIGNED_BYTE, frames[i].ds);
-    gl.bindTexture(gl.TEXTURE_2D, texID);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, gl.LUMINANCE, gl.UNSIGNED_BYTE, frames[i].id);
-    shown = i;
+  // Textures of frame i. Uploading decodes the images again, so recent frames stay on the GPU.
+  function texFor(i) {
+    const k = cache.findIndex((e) => e.i === i);
+    let e;
+    if (k >= 0) {
+      e = cache.splice(k, 1)[0];
+    } else {
+      e = cache.length >= CACHE ? cache.shift() : { ds: mkTex(gl.LINEAR), id: mkTex(gl.NEAREST) };
+      e.i = i;
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+      gl.bindTexture(gl.TEXTURE_2D, e.ds);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, gl.LUMINANCE, gl.UNSIGNED_BYTE, frames[i].ds);
+      gl.bindTexture(gl.TEXTURE_2D, e.id);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, gl.LUMINANCE, gl.UNSIGNED_BYTE, frames[i].id);
+    }
+    cache.push(e);
+    return e;
   }
 
   function showFrame(i) {
     const k = nearestLoaded(i);
-    if (k >= 0 && k !== shown) upload(k);
+    if (k < 0 || k === shown) return;
+    cur = texFor(k);
+    shown = k;
+    dirty = true;
   }
 
   let hiId = 0;
   let hiAmt = 0;
+  let drawnHi = -1;
+  let drawnAmt = -1;
 
   function draw() {
-    if (!gl || shown < 0 || !canvas.width) return;
+    if (!glOk || !cur || !canvas.width) return;
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.useProgram(prog);
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, texDS);
+    gl.bindTexture(gl.TEXTURE_2D, cur.ds);
     gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, texID);
+    gl.bindTexture(gl.TEXTURE_2D, cur.id);
     gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_2D, texPal);
     gl.uniform2f(U.uStep, 0.25 / canvas.width, 0.25 / canvas.height);
@@ -517,6 +595,9 @@ void main(){
     gl.enableVertexAttribArray(aPos);
     gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
+    drawnHi = hiId;
+    drawnAmt = hiAmt;
+    dirty = false;
   }
 
   function resize() {
@@ -531,17 +612,20 @@ void main(){
     if (canvas.width !== w || canvas.height !== h) {
       canvas.width = w;
       canvas.height = h;
-      requestDraw();
+      // a new size empties the canvas: redraw before it is painted
+      if (!glOk) return;
+      if (cur) draw(); else clearStage();
     }
   }
 
   function renderThumbs() {
-    if (!gl || !frames[0] || !canvas.width) return;
-    const keepShown = shown;
+    const k = nearestLoaded(0);
+    if (!glOk || k < 0 || !canvas.width) return;
+    const keep = shown;
     const keepHi = [hiId, hiAmt];
     hiId = 0;
     hiAmt = 0;
-    upload(0);
+    cur = texFor(k);
     const cw = canvas.width;
     const ch = canvas.height;
     PRESETS.forEach((p) => {
@@ -557,7 +641,8 @@ void main(){
     });
     buildPalette(colors);
     [hiId, hiAmt] = keepHi;
-    if (keepShown >= 0 && keepShown !== 0) upload(keepShown);
+    if (keep >= 0) cur = texFor(keep); else shown = k;
+    thumbFrame = k;
     draw();
   }
 
@@ -574,10 +659,11 @@ void main(){
   const SPIN = 0.024; // degrees per ms
   const frameOf = (a) => ((Math.round(a / (360 / FRAMES)) % FRAMES) + FRAMES) % FRAMES;
 
-  function requestDraw() { if (gl && !raf) raf = requestAnimationFrame(tick); }
+  function requestDraw() { if (glOk && !raf) raf = requestAnimationFrame(tick); }
 
   function tick(t) {
     raf = 0;
+    if (!glOk) return;
     const dt = lastT ? Math.min(50, t - lastT) : 16;
     lastT = t;
     let again = false;
@@ -591,8 +677,10 @@ void main(){
     }
     if (!hiAmt && hoverId) { hiId = hoverId; hiAmt = 0.45; }
     showFrame(frameOf(angle));
-    draw();
-    if (again) requestDraw(); else lastT = 0;
+    if (hiId !== drawnHi || hiAmt !== drawnAmt) dirty = true;
+    if (dirty) draw();
+    // nothing to show yet: the first loaded frame restarts the loop
+    if (again && shown >= 0) requestDraw(); else lastT = 0;
   }
 
   function pulse(id) {
@@ -619,7 +707,7 @@ void main(){
   const pctx = pickCanvas.getContext('2d', { willReadFrequently: true });
 
   function pickAt(cx, cy) {
-    if (shown < 0) return 0;
+    if (shown < 0 || !frames[shown]) return 0;
     const r = canvas.getBoundingClientRect();
     const x = Math.floor(((cx - r.left) / r.width) * IDW);
     const y = Math.floor(((cy - r.top) / r.height) * IDH);
@@ -661,8 +749,10 @@ void main(){
   let hoverEv = null;
 
   function bindViewer() {
+    // A touch may turn into a page scroll (touch-action: pan-y), so the spin and the hint
+    // are stopped only once the gesture is a drag or a tap.
     canvas.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || !glOk) return;
       pid = e.pointerId;
       try { canvas.setPointerCapture(pid); } catch (err) { /* ignore */ }
       dragging = true;
@@ -671,13 +761,17 @@ void main(){
       sAngle = angle;
       lt = downT = e.timeStamp;
       vel = 0;
-      setSpin(false);
-      stopHint();
     });
     canvas.addEventListener('pointermove', (e) => {
       if (dragging && e.pointerId === pid) {
         const dx = e.clientX - sx;
-        if (!moved && Math.abs(dx) > 6) { moved = true; canvas.classList.add('dragging'); tip.hidden = true; }
+        if (!moved && Math.abs(dx) > 6) {
+          moved = true;
+          canvas.classList.add('dragging');
+          tip.hidden = true;
+          setSpin(false);
+          stopHint();
+        }
         if (moved) {
           const k = 360 / (canvas.clientWidth * 1.5);
           angle = sAngle + dx * k;
@@ -703,10 +797,14 @@ void main(){
       if (!dragging || e.pointerId !== pid) return;
       dragging = false;
       canvas.classList.remove('dragging');
-      if (!moved && !cancelled && e.timeStamp - downT < 600) {
+      if (!moved) {
         vel = 0;
-        const id = pickAt(e.clientX, e.clientY);
-        if (id) selectPart(PARTS[id - 1].key, true, e);
+        if (!cancelled && e.timeStamp - downT < 600) {
+          setSpin(false);
+          stopHint();
+          const id = pickAt(e.clientX, e.clientY);
+          if (id) selectPart(PARTS[id - 1].key, true, e);
+        }
       } else if (e.timeStamp - lt > 90) {
         vel = 0;
       }
@@ -728,49 +826,122 @@ void main(){
     });
     $('spin').addEventListener('click', () => setSpin(!spinning));
     $('front').addEventListener('click', () => { setSpin(false); vel = 0; angle = Math.round(angle / 360) * 360; requestDraw(); });
+    // The system may take the GPU away (a phone in the background); the frames stay in memory.
     canvas.addEventListener('webglcontextlost', (e) => {
       e.preventDefault();
-      $('nogl').hidden = false;
-      gl = null;
+      glOk = false;
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      cache = [];
+      cur = null;
+      shown = -1;
+      dragging = false;
+      hoverId = 0;
+      tip.hidden = true;
+      stopHint();
+      showMsg('lost', '3D-просмотр отключился. Обновите страницу: выбранные цвета сохранятся.', 'Обновить', () => location.reload());
+    });
+    canvas.addEventListener('webglcontextrestored', () => {
+      try { initGL(); } catch (err) { return; }
+      buildPalette(colors);
+      hideMsg('lost');
+      afterFrame();
+      if (!loadedCount && !loading && failed.length) showLoadFail();
     });
     if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);
     else window.addEventListener('resize', resize);
+    window.addEventListener('online', retryLoad);
   }
 
-  async function loadAll() {
-    const ok = await loadFrame(0);
-    if (!ok) { $('loadtxt').textContent = 'Не удалось загрузить котика, обновите страницу'; return; }
-    resize();
-    upload(0);
-    renderThumbs();
+  // A frame arrived or the context came back.
+  function afterFrame() {
+    if (!glOk || !loadedCount) return;
+    if (!started) {
+      started = true;
+      hideMsg('load');
+      $('loader').classList.add('started');
+      resize();
+      showFrame(frameOf(angle));
+      draw();
+      renderThumbs();
+      $('hint').classList.add('show');
+      hintTimer = setTimeout(stopHint, 7000);
+    } else if (nearestLoaded(0) !== thumbFrame) {
+      // the thumbnails show the front view, or the nearest frame while it is missing
+      renderThumbs();
+    }
     requestDraw();
-    $('hint').classList.add('show');
-    hintTimer = setTimeout(stopHint, 7000);
-    const first = [18, 9, 27];
-    const rest = [];
-    for (let i = 3; i < FRAMES; i += 3) if (!first.includes(i)) rest.push(i);
-    for (let i = 1; i < FRAMES; i++) if (i % 3) rest.push(i);
-    const queue = first.concat(rest);
-    const worker = async () => {
-      while (queue.length) {
-        const i = queue.shift();
-        await loadFrame(i);
-        requestDraw();
-      }
-    };
-    await Promise.all([worker(), worker(), worker(), worker()]);
-    $('loader').classList.add('done');
+  }
+
+  function showLoadFail() {
+    showMsg('load', 'Не получилось загрузить котика. Проверьте интернет и попробуйте ещё раз.', 'Повторить', retryLoad);
+  }
+
+  // Frames load in up to 4 streams. While nothing is on screen, the front view loads alone
+  // to get the whole connection: it is the first picture.
+  const queue = [];
+  let workers = 0;
+  let loadingFront = false;
+
+  function enqueue(list) {
+    list.forEach((i) => { if (!frames[i] && !queue.includes(i)) queue.push(i); });
+    const z = queue.indexOf(0);
+    if (z > 0) { queue.splice(z, 1); queue.unshift(0); }
+    loading = true;
+    $('loader').classList.remove('done');
+    pump();
+  }
+
+  function pump() {
+    const limit = !loadedCount && (queue[0] === 0 || loadingFront) ? 1 : 4;
+    while (workers < limit && queue.length) runWorker(queue.shift());
+  }
+
+  async function runWorker(i) {
+    workers++;
+    if (i === 0) loadingFront = true;
+    const ok = await loadFrame(i);
+    if (i === 0) loadingFront = false;
+    workers--;
+    if (ok) {
+      afterFrame();
+    } else {
+      failed.push(i);
+      // one missing frame is not the connection: wait for a second failure before saying so
+      if (!loadedCount && failed.length > 1) showLoadFail();
+    }
+    if (queue.length) pump();
+    else if (!workers) loadEnded();
+  }
+
+  function loadEnded() {
+    loading = false;
+    if (!failed.length) { $('loader').classList.add('done'); return; }
+    if (!loadedCount) showLoadFail();
+    if (loadedCount && retries < 2) {
+      retries++;
+      setTimeout(retryLoad, 5000 * retries);
+    }
+  }
+
+  // the "Повторить" button, the browser coming back online and two automatic tries
+  function retryLoad() {
+    if (!failed.length) return;
+    const list = failed;
+    failed = [];
+    hideMsg('load');
+    enqueue(list);
   }
 
   // ---------- start ----------
   buildPresets();
   buildParts();
+  buildSwatches();
   bindUI();
   if (gl) {
     try {
       initGL();
     } catch (e) {
-      gl = null;
+      glOk = false;
     }
   }
   const initial = parseCode(location.hash) || PRESETS[0].code;
@@ -780,12 +951,16 @@ void main(){
     const box = $('presets');
     box.scrollLeft += active.btn.getBoundingClientRect().left - box.getBoundingClientRect().left - 16;
   }
-  if (gl) {
+  if (glOk) {
     bindViewer();
     setSpin(spinning);
-    loadAll();
+    resize();
+    const order = [0, 18, 9, 27];
+    for (let i = 3; i < FRAMES; i += 3) if (!order.includes(i)) order.push(i);
+    for (let i = 1; i < FRAMES; i++) if (i % 3) order.push(i);
+    enqueue(order);
   } else {
-    $('nogl').hidden = false;
+    showMsg('nogl', 'Браузер не смог включить 3D-просмотр. Цвета всё равно можно выбрать ниже, а текст для заказа скопируется как обычно.');
     $('loader').classList.add('done');
     PRESETS.forEach((p) => {
       const ctx = p.canvas.getContext('2d');

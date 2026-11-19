@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DJ-котик: выберите цвета</title>
 <meta name="description" content="Котик в наушниках, напечатанный на 3D-принтере. Выберите готовую расцветку или цвет каждой детали и покрутите котика на 360°.">
 <meta name="theme-color" content="#F6F4F1">
@@ -34,7 +34,7 @@
         <button type="button" class="icon" id="spin" aria-pressed="true" title="Автоповорот"><span aria-hidden="true">❚❚</span><span class="sr">Автоповорот</span></button>
         <button type="button" class="icon" id="front" title="Лицом к вам"><span aria-hidden="true">◉</span><span class="sr">Повернуть лицом</span></button>
       </div>
-      <p class="nogl" id="nogl" hidden>Браузер не смог включить 3D-просмотр. Цвета всё равно можно выбрать ниже, а текст для заказа скопируется как обычно.</p>
+      <div class="vmsg" id="vmsg" hidden><p id="vmsgtxt"></p><button type="button" class="secondary" id="vmsgbtn" hidden></button></div>
     </div>
   </section>
 
@@ -48,7 +48,7 @@
       <h2>Цвет деталей</h2>
       <div class="parts" id="parts" role="tablist" aria-label="Детали"></div>
       <div class="palette-head"><span id="palTitle"></span><label class="link" id="linkWrap" hidden><input type="checkbox" id="link"> <span id="linkTxt"></span></label></div>
-      <div class="palette" id="palette" role="radiogroup"></div>
+      <div class="palette" id="palette" role="radiogroup" aria-labelledby="palTitle"></div>
     </div>
 
     <div class="block order">
@@ -72,7 +72,7 @@
   <details>
     <summary>Есть код расцветки?</summary>
     <form id="codeform" class="codeform" autocomplete="off">
-      <input id="codein" maxlength="8" placeholder="Например, KKWWBPPO" aria-label="Код расцветки" spellcheck="false" autocapitalize="characters">
+      <input id="codein" placeholder="Например, KKWWBPPO" aria-label="Код расцветки" spellcheck="false" autocapitalize="characters" autocorrect="off">
       <button type="submit" class="secondary">Показать</button>
     </form>
   </details>

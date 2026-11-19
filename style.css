@@ -13,6 +13,8 @@
 
 * { box-sizing: border-box; }
 
+[hidden] { display: none !important; }
+
 html { -webkit-text-size-adjust: 100%; }
 
 body {
@@ -80,22 +82,27 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
 .viewer canvas.dragging { cursor: grabbing; }
 
 .loader {
-  position: absolute; left: 14px; top: 14px;
-  display: flex; flex-direction: column; align-items: flex-start; gap: 5px;
-  font-size: 12px; color: var(--muted);
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  font-size: 13px; color: var(--muted);
   transition: opacity 0.4s;
   pointer-events: none;
 }
-.loader .bar { width: 96px; height: 4px; border-radius: 4px; background: rgba(0, 0, 0, 0.08); overflow: hidden; }
+.loader .bar { width: 120px; height: 4px; border-radius: 4px; background: rgba(0, 0, 0, 0.08); overflow: hidden; }
 .loader .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.2s; }
+/* once the cat is on screen, only a thin line along the top edge stays */
+.loader.started { inset: 0 0 auto; display: block; }
+.loader.started span { display: none; }
+.loader.started .bar { width: 100%; height: 3px; border-radius: 0; background: transparent; }
 .loader.done { opacity: 0; }
 
 .hint {
   position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
-  white-space: nowrap;
+  width: max-content; max-width: calc(100% - 20px);
+  text-align: center; line-height: 1.3;
   font-size: 12px; color: var(--ink);
   background: rgba(255, 255, 255, 0.82);
-  padding: 5px 10px; border-radius: 999px;
+  padding: 5px 10px; border-radius: 14px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   transition: opacity 0.5s;
   pointer-events: none;
@@ -113,20 +120,36 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
   white-space: nowrap;
 }
 
-.vbtns { position: absolute; top: 10px; right: 10px; display: flex; flex-direction: column; gap: 8px; }
+.vbtns { position: absolute; top: 6px; right: 6px; display: flex; flex-direction: column; }
 .icon {
-  width: 36px; height: 36px; border-radius: 50%;
-  border: 1px solid var(--line); background: rgba(255, 255, 255, 0.9);
+  position: relative;
+  width: 44px; height: 44px; padding: 0;
+  border: 0; background: none;
   display: grid; place-items: center;
   font-size: 13px; line-height: 1; color: var(--ink);
+  -webkit-tap-highlight-color: transparent;
+}
+.icon::before {
+  content: "";
+  position: absolute; inset: 4px;
+  border-radius: 50%;
+  border: 1px solid var(--line); background: rgba(255, 255, 255, 0.9);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
+.icon > [aria-hidden] { position: relative; }
+.icon:focus-visible { outline: none; }
+.icon:focus-visible::before { outline: 2px solid var(--accent); outline-offset: 2px; }
 .icon[aria-pressed="false"] { color: var(--muted); }
 
-.nogl {
-  position: absolute; inset: auto 16px 16px 16px; margin: 0;
-  font-size: 13px; color: var(--muted); text-align: center;
+/* no 3D, the GPU was taken away or the frames did not load */
+.vmsg {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  padding: 20px; text-align: center;
+  font-size: 14px; color: var(--ink);
 }
+.vmsg p { margin: 0; max-width: 28ch; }
+.viewer.off canvas, .viewer.off .loader, .viewer.off .hint, .viewer.off .tip, .viewer.off .vbtns { visibility: hidden; }
 
 /* ---------- panel ---------- */
 .panel { padding-bottom: 8px; }
@@ -170,6 +193,7 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
 .parts { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip {
   display: inline-flex; align-items: center; gap: 7px;
+  min-height: 40px;
   padding: 7px 12px 7px 9px;
   border-radius: 999px;
   border: 1px solid var(--line);
@@ -180,12 +204,17 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
 .chip[aria-selected="true"] { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
 
 .palette-head {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
-  margin: 12px 0 8px; font-size: 14px;
+  display: flex; align-items: center; justify-content: space-between; gap: 0 10px; flex-wrap: wrap;
+  min-height: 40px;
+  margin: 6px 0 4px; font-size: 14px;
 }
 .palette-head #palTitle { font-weight: 600; }
-.link { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; cursor: pointer; }
-.link input { width: 16px; height: 16px; accent-color: var(--accent); margin: 0; }
+.link {
+  display: inline-flex; align-items: center; gap: 8px;
+  min-height: 40px; padding: 0 4px; margin-right: -4px;
+  color: var(--muted); font-size: 13px; cursor: pointer;
+}
+.link input { width: 20px; height: 20px; accent-color: var(--accent); margin: 0; }
 
 .palette { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .swatch {
@@ -217,7 +246,7 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
 .code { margin: 12px 0 0; font-size: 14px; color: var(--muted); }
 .codebtn {
   border: 1px dashed var(--line); background: var(--bg);
-  border-radius: 8px; padding: 2px 8px;
+  border-radius: 8px; padding: 7px 10px;
   font: 600 15px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0.12em;
   color: var(--ink);
 }
@@ -236,14 +265,15 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
 
 .foot { padding-top: 10px; padding-bottom: 36px; font-size: 13px; color: var(--muted); }
 .foot p { margin: 8px 0 0; max-width: 70ch; }
-.foot summary { cursor: pointer; color: var(--ink); font-weight: 600; }
-.codeform { display: flex; gap: 8px; margin-top: 8px; }
+.foot summary { cursor: pointer; color: var(--ink); font-weight: 600; padding: 10px 0; }
+.codeform { display: flex; gap: 8px; margin-top: 2px; }
 .codeform input {
-  flex: 0 1 200px; min-width: 0;
+  flex: 1 1 200px; min-width: 0; max-width: 300px;
   border: 1px solid var(--line); border-radius: 12px; padding: 9px 12px;
-  font: 600 15px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0.1em; text-transform: uppercase;
+  font: 600 16px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; letter-spacing: 0.1em; text-transform: uppercase;
   background: var(--card); color: var(--ink);
 }
+.codeform input::placeholder { text-transform: none; letter-spacing: normal; font-weight: 400; }
 
 .toast {
   position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom));
