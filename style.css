@@ -26,7 +26,7 @@ body {
 
 .wrap { width: 100%; max-width: 1120px; margin: 0 auto; padding-left: 16px; padding-right: 16px; }
 
-.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.sr { position: absolute; top: 0; left: 0; width: 1px; height: 1px; margin: 0; padding: 0; border: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 button { font: inherit; color: inherit; cursor: pointer; }
 button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-visible {
@@ -35,6 +35,19 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
 }
 /* the viewer clips everything outside it, so the cat's focus ring is drawn inside */
 .viewer canvas:focus-visible { outline-offset: -3px; }
+/* Safari paints a WebGL canvas over its own outline: the ring goes on top of the viewer instead */
+@supports selector(:has(*)) {
+  .viewer canvas:focus-visible { outline: none; }
+  .viewer:has(canvas:focus-visible)::after {
+    content: "";
+    position: absolute; top: 1px; right: 1px; bottom: 1px; left: 1px;
+    border: 2px solid var(--accent);
+    border-radius: calc(var(--radius) - 1px);
+    pointer-events: none;
+  }
+}
+/* a focus target for script only: the keyboard goes on from the cat after a code */
+.stage:focus { outline: none; }
 
 .top { padding-top: 18px; padding-bottom: 6px; }
 .top h1 { margin: 0 0 4px; font-size: 24px; line-height: 1.2; letter-spacing: -0.01em; }
@@ -113,10 +126,13 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
   opacity: 0;
 }
 .hint.show { opacity: 1; }
-.hint .hs { display: none; }
+.hint .hs, .hint .hx { display: none; }
 .hint.small { max-width: calc(100% - 12px); font-size: 11px; padding: 3px 7px; bottom: 6px; }
 .hint.small .hl { display: none; }
 .hint.small .hs { display: inline; }
+.hint.small.xs .hs { display: none; }
+.hint.small.xs .hx { display: inline; }
+.hint.gone { display: none; }
 
 .tip {
   position: absolute; z-index: 2;
@@ -153,12 +169,12 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
 .vmsg {
   position: absolute; top: 0; right: 0; bottom: 0; left: 0;
   display: flex;
-  overflow-y: auto; overscroll-behavior: contain;
+  overflow-y: auto;
   padding: 20px; text-align: center;
   font-size: 14px; color: var(--ink);
 }
 /* auto margins center the text while it fits; a longer one starts at the top and scrolls */
-.vmsgin { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.vmsgin { margin: auto; max-width: 100%; display: flex; flex-direction: column; align-items: center; gap: 12px; overflow-wrap: break-word; overflow-wrap: anywhere; }
 .vmsg p { margin: 0; max-width: 28ch; }
 .vmsg.compact { padding: 8px 6px; font-size: 12px; line-height: 1.3; }
 .vmsg.compact .vmsgin { gap: 6px; }
@@ -204,6 +220,7 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
   background: var(--stage);
   display: block;
 }
+.preset .thumb { pointer-events: none; -webkit-user-drag: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .preset .dice { display: grid; place-items: center; font-size: 34px; }
 .preset[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
 
@@ -218,7 +235,7 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
   font-size: 14px;
 }
 .chip .dot { width: 16px; height: 16px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15); }
-.chip[aria-selected="true"] { border-color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.chip[aria-selected="true"] { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent) inset; }
 
 .palette-head {
   display: flex; align-items: center; justify-content: space-between; column-gap: 10px;
@@ -303,7 +320,7 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
   max-width: calc(100vw - 32px);
   background: var(--ink); color: #fff;
   padding: 10px 14px; border-radius: 12px;
-  font-size: 14px; text-align: center;
+  font-size: 14px; text-align: center; overflow-wrap: break-word; overflow-wrap: anywhere;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.2);
   opacity: 0; pointer-events: none;
   transition: opacity 0.25s, transform 0.25s;
@@ -313,6 +330,32 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
 
 @media (max-width: 420px) {
   .top p { font-size: 14px; }
+}
+
+/* a narrow phone: the longest color word ("полупрозрачный,") must fit inside its swatch */
+@media (max-width: 349.98px) {
+  .swatch { gap: 7px; padding: 8px 6px 8px 7px; }
+  .swatch .ball { width: 26px; height: 26px; }
+  .swatch .mt { font-size: 10px; }
+}
+
+/* narrower still (a large zoom): the colors stand in one column, so their names fit */
+@media (max-width: 309.98px) {
+  .palette { grid-template-columns: minmax(0, 1fr); }
+  .swatch .txt { overflow-wrap: break-word; overflow-wrap: anywhere; }
+}
+
+/* a very narrow page: the checkbox goes under the title instead of over it */
+@media (max-width: 299.98px) {
+  .palette-head { flex-wrap: wrap; }
+  .link { max-width: none; }
+}
+
+/* Safari before 15 has no aspect-ratio: the viewer width follows its height by hand */
+@supports not (aspect-ratio: 1 / 1) {
+  @media (max-width: 899.98px) {
+    .viewer { width: calc(min(46vh, (100vw - 32px) * 1.25) * 0.8); }
+  }
 }
 
 @media (min-width: 560px) {

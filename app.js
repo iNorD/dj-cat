@@ -126,6 +126,7 @@
   const thumbCanvas = document.createElement('canvas');
   thumbCanvas.width = thumbW;
   thumbCanvas.height = thumbH;
+  const BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 
   function buildPresets() {
     const box = $('presets');
@@ -137,6 +138,9 @@
       const im = document.createElement('img');
       im.alt = '';
       im.className = 'thumb';
+      im.draggable = false;
+      // an img without a picture gets a gray frame: a transparent one stands in until the render
+      im.src = BLANK;
       b.appendChild(im);
       const s = document.createElement('span');
       s.textContent = p.name;
@@ -349,11 +353,12 @@
       toast(ok ? 'Ссылка скопирована' : url);
     });
     // A wrong code is explained under the field: a toast would hide behind the phone keyboard.
+    // The text stays until the next try: taking it away while the keyboard is open made
+    // Safari move the field under the finger.
     const codeErr = (msg) => {
       $('codeerr').textContent = msg;
       if (msg) $('codein').setAttribute('aria-invalid', 'true'); else $('codein').removeAttribute('aria-invalid');
     };
-    $('codein').addEventListener('input', () => { if ($('codeerr').textContent) codeErr(''); });
     $('codeform').addEventListener('submit', (e) => {
       e.preventDefault();
       const inp = $('codein');
@@ -361,7 +366,12 @@
       if (!c) { codeErr('Нужен код из 8 латинских букв W, B, P, Y, K, O, например KKWWBPPO.'); return; }
       codeErr('');
       inp.value = c;
-      inp.blur();
+      // the keyboard closes, and the next Tab goes on from the cat rather than the page bottom;
+      // the block is focusable only for this moment, so a tap on it never focuses it
+      const stage = $('stage');
+      stage.tabIndex = -1;
+      stage.addEventListener('blur', () => stage.removeAttribute('tabindex'), { once: true });
+      stage.focus({ preventScroll: true });
       applyCode(c);
       toast('Расцветка по коду ' + c);
       window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
@@ -668,12 +678,22 @@ void main(){
     dirty = false;
   }
 
+  // A low or narrow viewer gets a shorter hint, and none if even the shortest would cover
+  // a fifth of the cat.
+  function fitHint(r) {
+    const h = $('hint');
+    const max = r.height * 0.2;
+    h.classList.remove('small', 'xs', 'gone');
+    if (r.height < 200 || h.offsetHeight > max) h.classList.add('small');
+    if (h.offsetHeight > max) h.classList.add('xs');
+    if (h.offsetHeight > max) h.classList.add('gone');
+  }
+
   function resize() {
     fitMsg();
     const r = canvas.getBoundingClientRect();
     if (!r.width || !r.height) return;
-    // a low viewer gets a short hint: the long one would cover the cat
-    $('hint').classList.toggle('small', r.height < 200);
+    fitHint(r);
     const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
     let w = Math.round(r.width * dpr);
     let h = Math.round(r.height * dpr);
@@ -1051,8 +1071,15 @@ void main(){
   }
 
   function retryLoad(quiet) {
-    if (!failed.length) return;
     quiet = quiet === true;
+    if (!failed.length) {
+      // a quiet round has taken the frames: the button or the network coming back shows it loading
+      if (!quiet && loading) {
+        hideMsg('load');
+        $('loader').classList.remove('done');
+      }
+      return;
+    }
     if (quiet && (loading || document.hidden || navigator.onLine === false || performance.now() - retryAt < 4000)) return;
     clearTimeout(retryTimer);
     retryAt = performance.now();
@@ -1099,8 +1126,11 @@ void main(){
     PRESETS.forEach((p) => {
       const c = colorsOf(p.code);
       ['body', 'headphones', 'bow', 'diamond'].forEach((k, i) => {
+        // whole pixel rows: a row shared by two stripes would keep a trace of the previous picture
+        const y0 = Math.round((thumbH * i) / 4);
+        const y1 = Math.round((thumbH * (i + 1)) / 4);
         ctx.fillStyle = COLORS[c[k]].hex;
-        ctx.fillRect(0, (thumbH / 4) * i, thumbW, thumbH / 4);
+        ctx.fillRect(0, y0, thumbW, y1 - y0);
       });
       try { p.img.src = thumbCanvas.toDataURL('image/png'); } catch (e) { /* no thumbnail then */ }
     });
