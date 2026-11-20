@@ -243,30 +243,31 @@
 
   // The palette head keeps the height of its tallest variant at the current width (every part with
   // every color), so a new choice never moves the swatches under the finger. The variants are tried
-  // on the real nodes and put back within the same task: nothing is painted in between.
+  // on a hidden copy of the head, so the real one (and what a screen reader holds on to) is untouched.
   let palHeadW = -1;
   function fitPalHead() {
-    const title = $('palTitle');
-    const head = title.parentNode;
+    const head = $('palTitle').parentNode;
     const w = head.getBoundingClientRect().width;
     if (!w || Math.abs(w - palHeadW) < 0.5) return;
     palHeadW = w;
-    const lw = $('linkWrap');
-    const lt = $('linkTxt');
-    const keep = [title.textContent, lw.hidden, lt.textContent];
-    head.style.minHeight = '';
+    const copy = head.cloneNode(true);
+    copy.querySelectorAll('[id]').forEach((e) => e.removeAttribute('id'));
+    copy.setAttribute('aria-hidden', 'true');
+    copy.style.cssText = `position: absolute; left: 0; top: 0; width: ${w}px; visibility: hidden; pointer-events: none;`;
+    head.parentNode.appendChild(copy);
+    const title = copy.querySelector('.pt');
+    const lw = copy.querySelector('.link');
+    const lt = lw.querySelector('span');
     let max = 0;
     PARTS.forEach((p) => {
       lw.hidden = !PAIR[p.key];
       if (PAIR[p.key]) lt.textContent = PAIR_LABEL[p.key];
       ORDER.forEach((l) => {
         title.textContent = `${p.name}: ${COLORS[l].name.toLowerCase()}`;
-        max = Math.max(max, head.getBoundingClientRect().height);
+        max = Math.max(max, copy.getBoundingClientRect().height);
       });
     });
-    title.textContent = keep[0];
-    lw.hidden = keep[1];
-    lt.textContent = keep[2];
+    copy.remove();
     head.style.minHeight = max + 'px';
   }
 
@@ -464,7 +465,7 @@
     msgAction = null;
     $('vmsg').hidden = true;
     $('vlive').textContent = '';
-    $('viewer').classList.remove('off');
+    $('viewer').classList.remove('off', 'tight');
     if (hadFocus) canvas.focus({ preventScroll: true });
   }
   // A low viewer (a phone on its side, a large page zoom) gets smaller text; if even that does not
@@ -479,7 +480,8 @@
       const r = document.createRange();
       r.setStart(t, w.index);
       r.setEnd(t, w.index + w[0].length);
-      if (new Set([...r.getClientRects()].map((q) => Math.round(q.top))).size > 1) return true;
+      // WebKit adds an empty rect at the end of the previous line for a word after a hyphen break
+      if (new Set([...r.getClientRects()].filter((q) => q.width > 0.5).map((q) => Math.round(q.top))).size > 1) return true;
     }
     return false;
   }
@@ -491,6 +493,8 @@
     if (over()) m.classList.add('compact');
     if (over()) m.classList.add('tiny');
     if (m.classList.contains('tiny') && (wordCut($('vmsgtxt')) || wordCut($('vmsgbtn')))) m.classList.add('micro');
+    // the text then runs close to the edges: a smaller corner radius keeps the first letter whole
+    $('viewer').classList.toggle('tight', m.classList.contains('micro'));
   }
 
   // ---------- WebGL viewer ----------
@@ -1150,7 +1154,8 @@ void main(){
   const initial = parseCode(location.hash) || PRESETS[0].code;
   applyCode(initial, { keepHash: true });
   fitPalHead();
-  if (window.ResizeObserver) new ResizeObserver(fitPalHead).observe($('palTitle').parentNode);
+  // the swatch grid has the head's width, and its size never depends on the head's height
+  if (window.ResizeObserver) new ResizeObserver(fitPalHead).observe($('palette'));
   else window.addEventListener('resize', fitPalHead);
   const active = PRESETS.find((p) => p.code === initial);
   if (active) {

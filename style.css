@@ -186,8 +186,9 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
 .vmsg.compact.tiny .vmsgin { gap: 4px; }
 .vmsg.compact.tiny .secondary { padding: 4px 6px; font-size: 11px; }
 .vmsg.compact.tiny.micro { padding: 2px; font-size: 10px; }
-.vmsg.compact.tiny.micro .secondary { padding: 3px; font-size: 10px; }
+.vmsg.compact.tiny.micro .secondary { padding: 3px 2px; font-size: 10px; -webkit-hyphens: auto; hyphens: auto; }
 .vmsg.compact.tiny.micro p { -webkit-hyphens: auto; hyphens: auto; }
+.viewer.tight { border-radius: 10px; }
 .viewer.off canvas, .viewer.off .loader, .viewer.off .hint, .viewer.off .tip, .viewer.off .vbtns { visibility: hidden; }
 
 /* ---------- panel ---------- */
@@ -252,7 +253,7 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
   min-height: 40px;
   margin: 6px 0 4px; font-size: 14px;
 }
-.palette-head #palTitle { flex: 1 1 auto; min-width: 0; font-weight: 600; line-height: 1.25; }
+.palette-head .pt { flex: 1 1 auto; min-width: 0; font-weight: 600; line-height: 1.25; }
 .link {
   flex: 0 1 auto; max-width: 50%;
   display: inline-flex; align-items: center; gap: 8px;
@@ -357,8 +358,21 @@ button:focus-visible, input:focus-visible, canvas:focus-visible, summary:focus-v
 
 /* a very narrow page: the checkbox goes under the title instead of over it */
 @media (max-width: 299.98px) {
-  .palette-head { flex-wrap: wrap; }
+  .palette-head { flex-wrap: wrap; align-content: flex-start; }
   .link { max-width: none; }
+}
+
+/* a narrow page (a large zoom): the code field gets a line of its own above its button, so the
+   whole code shows in it */
+@media (max-width: 259.98px) {
+  .codeform { flex-wrap: wrap; }
+  .codeform input { flex-basis: 100%; max-width: none; }
+  .codeform button { flex: 1 1 auto; }
+}
+
+/* narrower still (a zoom of 200% and more): the order buttons take less side room */
+@media (max-width: 209.98px) {
+  .actions .primary, .actions .secondary { padding-left: 8px; padding-right: 8px; }
 }
 
 /* a page narrower than the longest button word (a zoom of 230% and more): the words break */
