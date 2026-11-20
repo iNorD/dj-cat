@@ -19,9 +19,10 @@
     P: { name: 'Розовая сакура', hex: '#F4B5CA', mat: 'ELEGOO Matte PLA', finish: 'матовый', spec: 0.35, trans: 0 },
     Y: { name: 'Миндально-жёлтый', hex: '#EDDA8E', mat: 'eSUN PLA+', finish: 'полуматовый', spec: 0.8, trans: 0 },
     K: { name: 'Светлый хаки', hex: '#C9C1AA', mat: 'eSUN PLA+', finish: 'полуматовый', spec: 0.8, trans: 0 },
+    M: { name: 'Мятный', hex: '#A3DFBD', mat: 'eSUN PLA+', finish: 'полуматовый', spec: 0.8, trans: 0 },
     O: { name: 'Оливковый', hex: '#7FA063', mat: 'ELEGOO PETG', finish: 'полупрозрачный, глянцевый', spec: 1.5, trans: 0.35 },
   };
-  const ORDER = ['W', 'B', 'P', 'Y', 'K', 'O'];
+  const ORDER = ['W', 'B', 'P', 'Y', 'K', 'M', 'O'];
 
   // code = one letter per part in PARTS order
   const PRESETS = [
@@ -75,17 +76,17 @@
   const codeOf = () => PARTS.map((p) => colors[p.key]).join('');
   const colorsOf = (code) => { const c = {}; PARTS.forEach((p, i) => { c[p.key] = code[i]; }); return c; };
 
-  // Cyrillic letters typed instead of the Latin ones: look-alikes (К, В, Р, О, У)
-  // and the same keys on the Russian keyboard layout (Ц, И, З, Н, Л, Щ).
-  const CYR = { 'К': 'K', 'В': 'B', 'Р': 'P', 'О': 'O', 'У': 'Y', 'Ц': 'W', 'И': 'B', 'З': 'P', 'Н': 'Y', 'Л': 'K', 'Щ': 'O' };
+  // Cyrillic letters typed instead of the Latin ones: look-alikes (К, В, Р, О, У, М)
+  // and the same keys on the Russian keyboard layout (Ц, И, З, Н, Л, Щ, Ь).
+  const CYR = { 'К': 'K', 'В': 'B', 'Р': 'P', 'О': 'O', 'У': 'Y', 'М': 'M', 'Ц': 'W', 'И': 'B', 'З': 'P', 'Н': 'Y', 'Л': 'K', 'Щ': 'O', 'Ь': 'M' };
   function parseCode(s) {
     const up = String(s || '').toUpperCase();
     // a code inside a longer text: the copied order, a link with #CODE
-    const m = up.match(/(?:^|[^A-Z])([WBPYKO]{8})(?![A-Z])/);
+    const m = up.match(/(?:^|[^A-Z])([WBPYKMO]{8})(?![A-Z])/);
     if (m) return m[1];
     // a code typed by hand: with spaces, zero instead of O or Cyrillic letters
-    const t = up.replace(/0/g, 'O').replace(/[^A-ZА-ЯЁ]/g, '').replace(/[КВРОУЦИЗНЛЩ]/g, (ch) => CYR[ch]);
-    return /^[WBPYKO]{8}$/.test(t) ? t : null;
+    const t = up.replace(/0/g, 'O').replace(/[^A-ZА-ЯЁ]/g, '').replace(/[КВРОУМЦИЗНЛЩЬ]/g, (ch) => CYR[ch]);
+    return /^[WBPYKMO]{8}$/.test(t) ? t : null;
   }
 
   function applyCode(code, opts = {}) {
@@ -303,7 +304,7 @@
   function randomCode() {
     const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
     for (let tries = 0; tries < 50; tries++) {
-      const body = pick(['W', 'B', 'P', 'Y', 'K', 'K', 'W']);
+      const body = pick(['W', 'B', 'P', 'Y', 'K', 'K', 'W', 'M']);
       const head = Math.random() < 0.88 ? body : pick(ORDER.filter((c) => c !== 'O'));
       const phones = pick(ORDER.filter((c) => c !== body));
       const band = Math.random() < 0.75 ? phones : pick(ORDER);
@@ -394,7 +395,7 @@
       e.preventDefault();
       const inp = $('codein');
       const c = parseCode(inp.value);
-      if (!c) { codeErr('Нужен код из 8 латинских букв W, B, P, Y, K, O, например KKWWBPPO.'); return; }
+      if (!c) { codeErr('Нужен код из 8 латинских букв W, B, P, Y, K, M, O, например KKWWBPPO.'); return; }
       codeErr('');
       inp.value = c;
       // the keyboard closes, and the next Tab goes on from the cat rather than the page bottom;
