@@ -18,7 +18,7 @@
     B: { name: 'Чёрный', hex: '#232323', mat: 'ELEGOO Matte PLA', finish: 'матовый', spec: 0.35, trans: 0 },
     P: { name: 'Розовая сакура', hex: '#F4B5CA', mat: 'ELEGOO Matte PLA', finish: 'матовый', spec: 0.35, trans: 0 },
     Y: { name: 'Миндально-жёлтый', hex: '#EDDA8E', mat: 'eSUN PLA+', finish: 'полуматовый', spec: 0.8, trans: 0 },
-    K: { name: 'Светлый хаки', hex: '#B7AD95', mat: 'eSUN PLA+', finish: 'полуматовый', spec: 0.8, trans: 0 },
+    K: { name: 'Светлый хаки', hex: '#C9C1AA', mat: 'eSUN PLA+', finish: 'полуматовый', spec: 0.8, trans: 0 },
     O: { name: 'Оливковый', hex: '#7FA063', mat: 'ELEGOO PETG', finish: 'полупрозрачный, глянцевый', spec: 1.5, trans: 0.35 },
   };
   const ORDER = ['W', 'B', 'P', 'Y', 'K', 'O'];
@@ -34,6 +34,7 @@
     { name: 'Пастель', code: 'YYPPBPWO' },
     { name: 'Сафари', code: 'KKBOBBOY' },
     { name: 'Монохром', code: 'WWBBBBBB' },
+    { name: 'Негатив', code: 'BBWWWWWW' },
   ];
 
   const PAIR = { body: 'head', head: 'body', headband: 'headphones', headphones: 'headband' };
@@ -41,7 +42,7 @@
   const linkId = (key) => (key === 'body' || key === 'head' ? 'bh' : 'hp');
 
   // ---------- render constants (must match the offline renderer) ----------
-  const FRAMES = 36;
+  const FRAMES = 120; // one every 3 degrees; in motion two neighbors are blended
   const FH = 900;
   const IDW = 1440;
   const IDH = 1800;
@@ -49,7 +50,7 @@
   const SMAX = 1.0;
   const SKY_D = 1.3094;
   const BACKDROP = '#EAE7E3';
-  const CACHE = 8; // frames kept on the GPU, 3.9 MB each
+  const CACHE = 8; // frames kept on the GPU, 2.6 MB each
 
   // ---------- helpers ----------
   const $ = (id) => document.getElementById(id);
@@ -507,32 +508,22 @@
   } catch (e) { gl = null; }
 
   const VS = 'attribute vec2 aPos; varying vec2 vUv; void main(){ vUv = aPos * 0.5 + 0.5; gl_Position = vec4(aPos, 0.0, 1.0); }';
-  const FS = `
-#ifdef GL_FRAGMENT_PRECISION_HIGH
-precision highp float;
-#else
-precision mediump float;
-#endif
-varying vec2 vUv;
-uniform sampler2D uDS;
-uniform sampler2D uID;
-uniform sampler2D uPal;
-uniform vec2 uStep;
-uniform float uHalf;
-uniform float uDMax;
-uniform float uSMax;
-uniform float uHiId;
-uniform float uHi;
-vec3 toLin(vec3 c){ return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
-vec3 toSrgb(vec3 c){ c = clamp(c, 0.0, 1.0); return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
-void main(){
-  vec2 uv = vec2(vUv.x, 1.0 - vUv.y);
+  // One frame's color: part albedo from its id (4 samples of the 2x id map) x diffuse light + specular.
+  // Written out twice, once per frame, rather than with sampler arguments (old mobile drivers).
+  // The id map is packed two ids to a byte: the texel holds the pair, the column picks the half.
+  const shadeFn = (name, ds, ids) => `
+vec3 ${name}(vec2 uv){
   vec3 alb = vec3(0.0);
   float spec = 0.0; float trans = 0.0; float hi = 0.0;
   for (int k = 0; k < 4; k++) {
     float fx = (k == 1 || k == 3) ? 1.0 : -1.0;
     float fy = (k >= 2) ? 1.0 : -1.0;
-    float id = floor(texture2D(uID, uv + vec2(fx, fy) * uStep).r * 255.0 + 0.5);
+    vec2 q = uv + vec2(fx, fy) * uStep;
+    float ix = clamp(floor(q.x * ${IDW}.0), 0.0, ${IDW - 1}.0);
+    float px = floor(ix * 0.5);
+    float pair = floor(texture2D(${ids}, vec2((px + 0.5) / ${IDW / 2}.0, q.y)).r * 255.0 + 0.5);
+    float left = floor(pair / 16.0);
+    float id = ix - 2.0 * px > 0.5 ? pair - 16.0 * left : left;
     vec4 a = texture2D(uPal, vec2((id + 0.5) / 16.0, 0.25));
     vec4 b = texture2D(uPal, vec2((id + 0.5) / 16.0, 0.75));
     alb += toLin(a.rgb);
@@ -542,14 +533,42 @@ void main(){
   }
   alb *= 0.25; spec *= 0.25; trans *= 0.25; hi *= 0.25;
   float v = clamp(uv.y, uHalf, 1.0 - uHalf) * 0.5;
-  float D = uDMax * pow(texture2D(uDS, vec2(uv.x, v)).r, 2.2);
-  float S = uSMax * pow(texture2D(uDS, vec2(uv.x, v + 0.5)).r, 2.2);
+  float D = uDMax * pow(texture2D(${ds}, vec2(uv.x, v)).r, 2.2);
+  float S = uSMax * pow(texture2D(${ds}, vec2(uv.x, v + 0.5)).r, 2.2);
   D = mix(D, 0.35 + 0.65 * D, trans);
   vec3 c = alb * D + vec3(spec * S);
   c = c / (1.0 + max(c - 0.8, 0.0) * 0.9);
   float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
   vec3 target = lum > 0.45 ? c * 0.7 + vec3(0.0, 0.03, 0.015) : c + vec3(0.10, 0.17, 0.12);
-  c = mix(c, target, hi * uHi);
+  return mix(c, target, hi * uHi);
+}`;
+  const FS = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+varying vec2 vUv;
+uniform sampler2D uDS;
+uniform sampler2D uID;
+uniform sampler2D uDS2;
+uniform sampler2D uID2;
+uniform sampler2D uPal;
+uniform vec2 uStep;
+uniform float uHalf;
+uniform float uDMax;
+uniform float uSMax;
+uniform float uHiId;
+uniform float uHi;
+uniform float uMix;
+vec3 toLin(vec3 c){ return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
+vec3 toSrgb(vec3 c){ c = clamp(c, 0.0, 1.0); return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c)); }
+${shadeFn('shadeA', 'uDS', 'uID')}
+${shadeFn('shadeB', 'uDS2', 'uID2')}
+void main(){
+  vec2 uv = vec2(vUv.x, 1.0 - vUv.y);
+  vec3 c = shadeA(uv);
+  if (uMix > 0.0) c = mix(c, shadeB(uv), uMix);
   gl_FragColor = vec4(toSrgb(c), 1.0);
 }`;
 
@@ -560,7 +579,9 @@ void main(){
   let texPal = null;
   const palData = new Uint8Array(16 * 2 * 4);
   let cache = []; // frame textures on the GPU, least recently used first
-  let cur = null; // textures of the frame on screen
+  let cur = null; // textures of the frame on screen (the earlier one of a blended pair)
+  let nxt = null; // textures of the next frame, blended in by mixT while the cat turns
+  let mixT = 0;
   let dirty = true; // the picture on the canvas is out of date
 
   function mkTex(filter) {
@@ -594,18 +615,23 @@ void main(){
     gl.linkProgram(prog);
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
     aPos = gl.getAttribLocation(prog, 'aPos');
-    ['uDS', 'uID', 'uPal', 'uStep', 'uHalf', 'uDMax', 'uSMax', 'uHiId', 'uHi'].forEach((n) => { U[n] = gl.getUniformLocation(prog, n); });
+    ['uDS', 'uID', 'uDS2', 'uID2', 'uPal', 'uStep', 'uHalf', 'uDMax', 'uSMax', 'uHiId', 'uHi', 'uMix'].forEach((n) => { U[n] = gl.getUniformLocation(prog, n); });
     vbo = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
     texPal = mkTex(gl.NEAREST);
     cache = [];
     cur = null;
+    nxt = null;
+    mixT = 0;
     shown = -1;
+    shownB = -1;
     gl.useProgram(prog);
     gl.uniform1i(U.uDS, 0);
     gl.uniform1i(U.uID, 1);
     gl.uniform1i(U.uPal, 2);
+    gl.uniform1i(U.uDS2, 3);
+    gl.uniform1i(U.uID2, 4);
     gl.uniform1f(U.uHalf, 0.5 / FH);
     gl.uniform1f(U.uDMax, DMAX);
     gl.uniform1f(U.uSMax, SMAX);
@@ -630,11 +656,17 @@ void main(){
   const frames = new Array(FRAMES).fill(null);
   let loadedCount = 0;
   let shown = -1; // frame whose textures are in `cur`
+  let shownB = -1; // frame whose textures are in `nxt`
   let failed = [];
   let loading = false;
   let started = false; // the first frame is on screen
   let thumbFrame = -1; // frame the preset thumbnails were drawn from
   let retries = 0;
+
+  // Lighting (diffuse over specular) and the part map. The map holds 1440x1800 part ids two to a
+  // byte, the left one of each pair in the high four bits, so it is 720x1800.
+  const dsUrl = (i) => `turn/ds${pad(i)}.webp`;
+  const idUrl = (i) => `turn/ip${pad(i)}.png`;
 
   const loadImg = (src) => new Promise((resolve, reject) => {
     const im = new Image();
@@ -648,7 +680,7 @@ void main(){
     for (let attempt = 0; attempt < 3; attempt++) {
       if (attempt) await sleep(700 * attempt);
       try {
-        const [ds, id] = await Promise.all([loadImg(`frames/ds${pad(i)}.webp`), loadImg(`frames/id${pad(i)}.png`)]);
+        const [ds, id] = await Promise.all([loadImg(dsUrl(i)), loadImg(idUrl(i))]);
         frames[i] = { ds, id };
         loadedCount++;
         $('bar').style.width = Math.round((loadedCount / FRAMES) * 100) + '%';
@@ -671,31 +703,139 @@ void main(){
   }
 
   // Textures of frame i. Uploading decodes the images again, so recent frames stay on the GPU.
-  function texFor(i) {
+  // A cache entry may hold only the shading half of a frame: the turn uploads the frame ahead
+  // one half per animation frame, so no single frame of the animation pays for a whole upload.
+  let upTick = 0; // textures uploaded since the animation frame began
+  function upload(e, half) {
+    const b = bitmaps.get(e.i);
+    const bmp = b && b[half];
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
+    gl.bindTexture(gl.TEXTURE_2D, e[half]);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, gl.LUMINANCE, gl.UNSIGNED_BYTE, bmp || frames[e.i][half]);
+    e[half === 'ds' ? 'hasDS' : 'hasID'] = true;
+    upTick++;
+    if (bmp) {
+      bmp.close();
+      b[half] = null;
+      if (!b.ds && !b.id) bitmaps.delete(e.i);
+    }
+  }
+
+  // Blink decodes an <img> again on the main thread for every upload, which stalls the turn.
+  // There the frames ahead of the turn are decoded off the main thread into bitmaps first.
+  // WebKit keeps the <img> uploads: its bitmaps upload slowly and come out color-managed.
+  const BITMAPS = typeof createImageBitmap === 'function' && navigator.vendor === 'Google Inc.';
+  const bitmaps = new Map(); // frame -> { ds, id, ready }, oldest first
+  let bitmapFails = 0;
+  function dropBitmap(j) {
+    const b = bitmaps.get(j);
+    if (b.ds) b.ds.close();
+    if (b.id) b.id.close();
+    b.ds = b.id = null;
+    bitmaps.delete(j);
+  }
+
+  function decodeAhead(i) {
+    if (!BITMAPS || bitmapFails > 2 || !frames[i] || bitmaps.has(i)) return;
+    const k = cache.findIndex((e) => e.i === i);
+    if (k >= 0 && cache[k].hasDS && cache[k].hasID) return;
+    const rec = { ds: null, id: null, ready: false };
+    bitmaps.set(i, rec);
+    // a few frames at most: each takes 10 MB while it waits
+    while (bitmaps.size > 3) dropBitmap(bitmaps.keys().next().value);
+    // the plain uploads still work: after a few failures the bitmaps are left alone
+    const fail = () => {
+      bitmapFails++;
+      if (bitmaps.get(i) === rec) bitmaps.delete(i);
+    };
+    try {
+      const opt = { premultiplyAlpha: 'none', colorSpaceConversion: 'none' };
+      const get = (url) => fetch(url, { cache: 'force-cache' })
+        .then((r) => { if (!r.ok) throw new Error(r.status); return r.blob(); })
+        .then((blob) => createImageBitmap(blob, opt))
+        .then((v) => ({ v }), () => ({}));
+      Promise.all([get(dsUrl(i)), get(idUrl(i))]).then(([a, b]) => {
+        const ok = !!(a.v && b.v);
+        if (ok && bitmaps.get(i) === rec) {
+          rec.ds = a.v;
+          rec.id = b.v;
+          rec.ready = true;
+          return;
+        }
+        if (a.v) a.v.close();
+        if (b.v) b.v.close();
+        if (!ok) fail();
+      });
+    } catch (e) {
+      fail();
+    }
+  }
+
+  // The cache entry of frame i, most recently used now; a new one takes the place of the least
+  // recently used entry that is not on screen.
+  function slot(i) {
     const k = cache.findIndex((e) => e.i === i);
     let e;
     if (k >= 0) {
       e = cache.splice(k, 1)[0];
-    } else {
-      e = cache.length >= CACHE ? cache.shift() : { ds: mkTex(gl.LINEAR), id: mkTex(gl.NEAREST) };
+    } else if (cache.length >= CACHE) {
+      e = cache.splice(Math.max(0, cache.findIndex((x) => x !== cur && x !== nxt)), 1)[0];
       e.i = i;
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
-      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-      gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
-      gl.bindTexture(gl.TEXTURE_2D, e.ds);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, gl.LUMINANCE, gl.UNSIGNED_BYTE, frames[i].ds);
-      gl.bindTexture(gl.TEXTURE_2D, e.id);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, gl.LUMINANCE, gl.UNSIGNED_BYTE, frames[i].id);
+      e.hasDS = false;
+      e.hasID = false;
+    } else {
+      e = { i, ds: mkTex(gl.LINEAR), id: mkTex(gl.NEAREST), hasDS: false, hasID: false };
     }
     cache.push(e);
     return e;
   }
 
-  function showFrame(i) {
-    const k = nearestLoaded(i);
-    if (k < 0 || k === shown) return;
+  function texFor(i) {
+    const e = slot(i);
+    if (!e.hasDS) upload(e, 'ds');
+    if (!e.hasID) upload(e, 'id');
+    return e;
+  }
+
+  // Half of frame i ahead of the turn, if this animation frame has uploaded nothing yet. Where
+  // the frames are decoded into bitmaps first, the upload waits for them.
+  function prefetch(i) {
+    if (!frames[i]) return;
+    const k = cache.findIndex((e) => e.i === i);
+    // a frame already there counts as used: the turn needs it next, so it must not be evicted
+    if (k >= 0 && cache[k].hasDS && cache[k].hasID) { cache.push(cache.splice(k, 1)[0]); return; }
+    if (BITMAPS && bitmapFails <= 2) {
+      const b = bitmaps.get(i);
+      if (!b) decodeAhead(i);
+      if (!b || !b.ready) return;
+    }
+    if (upTick) return;
+    const e = slot(i);
+    upload(e, e.hasDS ? 'id' : 'ds');
+  }
+
+  // The picture for a turntable angle. In motion it blends the two frames around the angle, so the
+  // turn is smooth; at rest it is one frame. A missing neighbor falls back to the nearest loaded frame.
+  const STEP = 360 / FRAMES;
+  function showAngle(a, moving) {
+    const f = (((a / STEP) % FRAMES) + FRAMES) % FRAMES;
+    let i0 = Math.floor(f) % FRAMES;
+    const i1 = (i0 + 1) % FRAMES;
+    let t = f - Math.floor(f);
+    if (!moving || t < 0.002) { if (t >= 0.5) i0 = i1; t = 0; }
+    if (t > 0 && frames[i0] && frames[i1]) {
+      if (shown !== i0 || !cur || cur.i !== i0) { cur = texFor(i0); shown = i0; dirty = true; }
+      if (shownB !== i1 || !nxt || nxt.i !== i1) { nxt = texFor(i1); shownB = i1; dirty = true; }
+      if (t !== mixT) { mixT = t; dirty = true; }
+      return;
+    }
+    const k = nearestLoaded(i0);
+    if (k < 0 || (k === shown && !mixT && cur && cur.i === k)) return;
     cur = texFor(k);
     shown = k;
+    mixT = 0;
     dirty = true;
   }
 
@@ -714,6 +854,12 @@ void main(){
     gl.bindTexture(gl.TEXTURE_2D, cur.id);
     gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_2D, texPal);
+    const b = mixT > 0 && nxt ? nxt : cur;
+    gl.activeTexture(gl.TEXTURE3);
+    gl.bindTexture(gl.TEXTURE_2D, b.ds);
+    gl.activeTexture(gl.TEXTURE4);
+    gl.bindTexture(gl.TEXTURE_2D, b.id);
+    gl.uniform1f(U.uMix, b === cur ? 0 : mixT);
     gl.uniform2f(U.uStep, 0.25 / canvas.width, 0.25 / canvas.height);
     gl.uniform1f(U.uHiId, hiId);
     gl.uniform1f(U.uHi, hiAmt);
@@ -783,10 +929,11 @@ void main(){
   function renderThumbs() {
     const k = nearestLoaded(0);
     if (!glOk || k < 0 || !canvas.width || gl.isContextLost()) return;
-    const keep = shown;
+    const keep = [shown, shownB, mixT];
     const keepHi = [hiId, hiAmt];
     hiId = 0;
     hiAmt = 0;
+    mixT = 0;
     cur = texFor(k);
     const cw = canvas.width;
     const ch = canvas.height;
@@ -811,7 +958,8 @@ void main(){
     });
     buildPalette(colors);
     [hiId, hiAmt] = keepHi;
-    if (keep >= 0) cur = texFor(keep); else shown = k;
+    if (keep[0] >= 0) cur = texFor(keep[0]); else shown = k;
+    if (keep[1] >= 0 && keep[2] > 0 && frames[keep[1]]) { nxt = texFor(keep[1]); mixT = keep[2]; }
     draw();
     // a context lost on the way leaves empty pictures: the restored context draws them again
     if (gl.isContextLost()) return;
@@ -830,13 +978,16 @@ void main(){
   let pulseId = 0;
   let hoverId = 0;
   const SPIN = 0.024; // degrees per ms
-  const frameOf = (a) => ((Math.round(a / (360 / FRAMES)) % FRAMES) + FRAMES) % FRAMES;
+  const isMoving = () => dragging || spinning || Math.abs(vel) > 0.004;
+  let prevAngle = 0;
+  let turnDir = 1;
 
   function requestDraw() { if (glOk && !raf) raf = requestAnimationFrame(tick); }
 
   function tick(t) {
     raf = 0;
     if (!glOk) return;
+    upTick = 0;
     const dt = lastT ? Math.min(50, t - lastT) : 16;
     lastT = t;
     let again = false;
@@ -849,7 +1000,22 @@ void main(){
       if (p < 1) { hiId = pulseId; hiAmt = Math.sin(p * Math.PI) * 0.85; again = true; } else { pulseT = -1; }
     }
     if (!hiAmt && hoverId) { hiId = hoverId; hiAmt = 0.45; }
-    showFrame(frameOf(angle));
+    const moving = isMoving();
+    // at rest the cat stops on a whole frame: no blend left on screen
+    if (!moving) angle = Math.round(angle / STEP) * STEP;
+    showAngle(angle, moving);
+    // the frame after the blended pair, in the direction of the turn, goes to the GPU early
+    if (angle !== prevAngle) turnDir = angle > prevAngle ? 1 : -1;
+    prevAngle = angle;
+    if (moving) {
+      const i0 = Math.floor((((angle / STEP) % FRAMES) + FRAMES) % FRAMES) % FRAMES;
+      const ahead = (n) => (i0 + (turnDir > 0 ? 1 + n : -n) + 2 * FRAMES) % FRAMES;
+      prefetch(ahead(1));
+      decodeAhead(ahead(2));
+    } else {
+      // the cat has stopped: decoded frames ahead are 10 MB each, decode them again on the next turn
+      bitmaps.forEach((b, j) => dropBitmap(j));
+    }
     if (hiId !== drawnHi || hiAmt !== drawnAmt) dirty = true;
     if (dirty) draw();
     // nothing to show yet: the first loaded frame restarts the loop
@@ -880,7 +1046,10 @@ void main(){
   const pctx = pickCanvas.getContext('2d', { willReadFrequently: true });
 
   function pickAt(cx, cy) {
-    if (shown < 0 || !frames[shown]) return 0;
+    // the frame the picture is closest to: past the middle of a blend it is mostly the next
+    // frame, and a stop lands on that frame too
+    const f = mixT >= 0.5 && shownB >= 0 && frames[shownB] ? shownB : shown;
+    if (f < 0 || !frames[f]) return 0;
     const r = canvas.getBoundingClientRect();
     const x = Math.floor(((cx - r.left) / r.width) * IDW);
     const y = Math.floor(((cy - r.top) / r.height) * IDH);
@@ -888,8 +1057,9 @@ void main(){
     try {
       pctx.imageSmoothingEnabled = false;
       pctx.clearRect(0, 0, 1, 1);
-      pctx.drawImage(frames[shown].id, x, y, 1, 1, 0, 0, 1, 1);
-      const v = pctx.getImageData(0, 0, 1, 1).data[0];
+      pctx.drawImage(frames[f].id, x >> 1, y, 1, 1, 0, 0, 1, 1);
+      const pair = pctx.getImageData(0, 0, 1, 1).data[0];
+      const v = x & 1 ? pair & 15 : pair >> 4;
       return v >= 1 && v <= PARTS.length ? v : 0;
     } catch (e) {
       return 0;
@@ -999,7 +1169,8 @@ void main(){
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         e.preventDefault();
         setSpin(false);
-        angle += (e.key === 'ArrowRight' ? 1 : -1) * (360 / FRAMES);
+        // 9 degrees a key press, three frames: a whole frame, so nothing is left blended
+        angle += (e.key === 'ArrowRight' ? 1 : -1) * 3 * STEP;
         requestDraw();
       }
     });
@@ -1012,7 +1183,10 @@ void main(){
       if (raf) { cancelAnimationFrame(raf); raf = 0; }
       cache = [];
       cur = null;
+      nxt = null;
+      mixT = 0;
       shown = -1;
+      shownB = -1;
       // a drag cut short: no spin from its speed after the restore
       if (dragging && pid !== null) {
         try { canvas.releasePointerCapture(pid); } catch (err) { /* ignore */ }
@@ -1048,7 +1222,7 @@ void main(){
       hideMsg('load');
       $('loader').classList.add('started');
       resize();
-      showFrame(frameOf(angle));
+      showAngle(angle, isMoving());
       draw();
       renderThumbs();
       $('hint').classList.add('show');
@@ -1166,9 +1340,9 @@ void main(){
     bindViewer();
     setSpin(spinning);
     resize();
-    const order = [0, 18, 9, 27];
-    for (let i = 3; i < FRAMES; i += 3) if (!order.includes(i)) order.push(i);
-    for (let i = 1; i < FRAMES; i++) if (i % 3) order.push(i);
+    // the front first, then ever finer: every 180, 90, 45, 15 degrees, then the rest
+    const order = [];
+    for (const step of [60, 30, 15, 5, 1]) for (let i = 0; i < FRAMES; i += step) if (!order.includes(i)) order.push(i);
     enqueue(order);
   } else {
     showMsg('nogl', 'Браузер не смог включить 3D-просмотр. Цвета всё равно можно выбрать ниже, а текст для заказа скопируется как обычно.');
