@@ -668,30 +668,113 @@ void main(){
   let started = false; // the first frame is on screen
   let thumbFrame = -1; // frame the preset thumbnails were drawn from
   let retries = 0;
+  // The spin starts once the frames that came leave no gap wider than 3 degrees: then it blends
+  // neighbours at most 3 degrees apart. Normally that is every third frame. A failed one of those may
+  // leave a gap of 6 degrees once none of them is still on its way. With wider gaps the turn would
+  // jump, so the cat waits, and the spin button shows that it waits.
+  let spinReady = false;
+  const busy = new Set(); // frames being loaded now
+  function widestGap() {
+    let first = -1;
+    let prev = -1;
+    let gap = 0;
+    for (let i = 0; i < FRAMES; i++) {
+      if (!frames[i]) continue;
+      if (prev < 0) first = i; else gap = Math.max(gap, i - prev);
+      prev = i;
+    }
+    return first < 0 ? Infinity : Math.max(gap, first + FRAMES - prev);
+  }
+  function checkSpinReady() {
+    if (spinReady || !loadedCount) return;
+    const gap = widestGap();
+    if (gap > 6) return;
+    if (gap > 3) {
+      // a frame that failed in this round and only has its one more try left does not count
+      const coming = new Set([...busy, ...queue, ...parked].filter((i) => !triedAgain.has(i)));
+      for (let i = 0; i < FRAMES; i += 3) if (!frames[i] && coming.has(i)) return;
+    }
+    letSpinGo();
+  }
+  function letSpinGo() {
+    spinReady = true;
+    showSpin();
+    requestDraw();
+  }
+  // for each missing frame in a gap wider than 3 degrees between the frames that came, the gap's width
+  function wideHoles() {
+    const hole = new Uint16Array(FRAMES);
+    let first = -1;
+    for (let i = 0; i < FRAMES; i++) if (frames[i]) { first = i; break; }
+    if (first < 0) return hole;
+    let a = first;
+    for (let k = 1; k <= FRAMES; k++) {
+      if (!frames[(first + k) % FRAMES]) continue;
+      const b = first + k;
+      if (b - a > 3) for (let m = a + 1; m < b; m++) hole[m % FRAMES] = b - a;
+      a = b;
+    }
+    return hole;
+  }
 
   // Lighting (diffuse over specular) and the part map. The map holds 1440x1800 part ids two to a
   // byte, the left one of each pair in the high four bits, so it is 720x1800.
   const dsUrl = (i) => `turn360/ds${pad(i)}.webp`;
   const idUrl = (i) => `turn360/ip${pad(i)}.png`;
 
+  // A request that hangs (a connection gone quiet) counts as failed after a while: many times what a
+  // frame takes, and at least 30 s. Until a frame comes again each time-out makes the requests after
+  // it wait twice as long, so a very slow link still gets its frames.
+  let loadMs = 0; // what a frame takes to arrive, averaged
+  let hangMs = 30000;
+  let shownEpoch = 0; // counts the page going to the background and back
   const loadImg = (src) => new Promise((resolve, reject) => {
     const im = new Image();
+    // while nothing is on screen the front view comes alone and may take long over a slow link
+    const wait = Math.min(240000, Math.max(hangMs, loadedCount ? 0 : 60000, 10 * loadMs));
+    let due = performance.now() + wait;
+    let timer = 0;
+    const giveUp = () => {
+      // the page slept (a phone with the browser in the background) and the timer comes late:
+      // the time it slept is not the request's
+      if (performance.now() - due > 1000) { due = performance.now() + wait; timer = setTimeout(giveUp, wait); return; }
+      im.onload = im.onerror = null;
+      im.removeAttribute('src'); // Chrome stops the request; Safari lets it run on, but nothing waits for it
+      hangMs = Math.min(240000, Math.max(hangMs, 2 * wait));
+      const err = new Error('timeout ' + src);
+      err.timeout = true;
+      reject(err);
+    };
+    timer = setTimeout(giveUp, wait);
     im.decoding = 'async';
-    im.onload = () => resolve(im);
-    im.onerror = () => reject(new Error('load ' + src));
+    im.onload = () => { clearTimeout(timer); resolve(im); };
+    im.onerror = () => { clearTimeout(timer); reject(new Error('load ' + src)); };
     im.src = src;
   });
 
   async function loadFrame(i) {
     for (let attempt = 0; attempt < 3; attempt++) {
       if (attempt) await sleep(700 * attempt);
+      const t0 = performance.now();
+      const e0 = shownEpoch;
       try {
         const [ds, id] = await Promise.all([loadImg(dsUrl(i)), loadImg(idUrl(i))]);
+        // what a frame takes, from loads that ran with the page on screen; one slow load can raise it
+        // at most threefold
+        if (e0 === shownEpoch && !document.hidden) {
+          const ms = performance.now() - t0;
+          loadMs = loadMs ? 0.8 * loadMs + 0.2 * Math.min(ms, 3 * loadMs + 500) : Math.min(ms, 30000);
+        }
+        hangMs = 30000;
         frames[i] = { ds, id };
         loadedCount++;
         $('bar').style.width = Math.round((loadedCount / FRAMES) * 100) + '%';
         return true;
-      } catch (e) { /* try again */ }
+      } catch (e) {
+        // an error is tried again at once; a request that hung waited long enough: other frames go
+        // first, and this one is asked for again later
+        if (e.timeout) return false;
+      }
     }
     return false;
   }
@@ -1076,7 +1159,7 @@ void main(){
   let pulseId = 0;
   let hoverId = 0;
   const SPIN = 0.024; // degrees per ms
-  const isMoving = () => dragging || spinning || Math.abs(vel) > 0.004;
+  const isMoving = () => dragging || (spinning && spinReady) || Math.abs(vel) > 0.004;
   let prevAngle = 0;
   let turnDir = 1;
 
@@ -1089,7 +1172,7 @@ void main(){
     const dt = lastT ? Math.min(50, t - lastT) : 16;
     lastT = t;
     let again = false;
-    if (spinning && !dragging) { angle += SPIN * dt; again = true; }
+    if (spinning && spinReady && !dragging) { angle += SPIN * dt; again = true; }
     if (!dragging && Math.abs(vel) > 0.004) { angle += vel * dt; vel *= Math.pow(0.996, dt); again = true; } else if (!dragging) { vel = 0; }
     hiId = 0;
     hiAmt = 0;
@@ -1145,11 +1228,19 @@ void main(){
     requestDraw();
   }
 
+  // while the cat waits for its frames (see checkSpinReady) the button shows the spin as on, but faint
+  function showSpin() {
+    const b = $('spin');
+    const wait = spinning && !spinReady;
+    b.setAttribute('aria-pressed', String(spinning));
+    b.firstChild.textContent = spinning ? '❚❚' : '▶';
+    b.classList.toggle('wait', wait);
+    b.title = wait ? 'Автоповорот: начнётся, когда котик загрузится' : 'Автоповорот';
+  }
+
   function setSpin(on) {
     spinning = on;
-    const b = $('spin');
-    b.setAttribute('aria-pressed', String(on));
-    b.firstChild.textContent = on ? '❚❚' : '▶';
+    showSpin();
     requestDraw();
   }
 
@@ -1330,7 +1421,7 @@ void main(){
     if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);
     else window.addEventListener('resize', resize);
     window.addEventListener('online', () => retryLoad());
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) retryLoad(true); });
+    document.addEventListener('visibilitychange', () => { shownEpoch++; if (!document.hidden) retryLoad(true); });
   }
 
   // A frame arrived or the context came back.
@@ -1377,22 +1468,54 @@ void main(){
     pump();
   }
 
+  // the pass of the first order a frame is in: 0 for every 60 degrees, then 30, 15, 6 and 3, 5 for the rest
+  const PASSES = [60, 30, 15, 6, 3];
+  const passOf = (i) => { const p = PASSES.findIndex((s) => i % s === 0); return p < 0 ? PASSES.length : p; };
+
   function pump() {
+    // With a frame on screen the queue goes coarse to fine, and the frames that failed and get one more
+    // try in this round come after all the others, except the front view: the preset pictures are
+    // drawn from it. Within a pass, while the spin waits for its frames, those in gaps wider than 3
+    // degrees come first, the widest gaps first: the neighbours of missing every-third frames close
+    // their gaps. Then the frames the cat needs first: while it spins by itself, those just ahead of
+    // where the turn will be when a frame asked for now arrives; otherwise those nearest to the angle.
+    if (loadedCount && queue.length > 1) {
+      const f = (((angle / STEP) % FRAMES) + FRAMES) % FRAMES;
+      let need = (i) => frameDist(i, f);
+      if (spinning && spinReady && !dragging) {
+        const t = f + (SPIN * loadMs) / STEP;
+        need = (i) => (((i - t) % FRAMES) + FRAMES) % FRAMES;
+      }
+      const hole = spinReady ? null : wideHoles();
+      const late = (i) => i !== 0 && triedAgain.has(i);
+      queue.sort((a, b) => late(a) - late(b) || passOf(a) - passOf(b) || (hole ? hole[b] - hole[a] : 0) || need(a) - need(b));
+    }
     const limit = !loadedCount && (queue[0] === 0 || loadingFront) ? 1 : 4;
     while (workers < limit && queue.length) runWorker(queue.shift());
   }
 
+  const triedAgain = new Set(); // failed frames already asked for again in this round
+
   async function runWorker(i) {
     workers++;
+    busy.add(i);
     if (i === 0) loadingFront = true;
     const ok = await loadFrame(i);
     if (i === 0) loadingFront = false;
+    busy.delete(i);
     workers--;
     if (ok) {
       // a failure here must not stop the queue
       try { afterFrame(); } catch (e) { /* the next frame tries again */ }
-      // the connection is back: the frames an early stop held back go on in this round
+      // the connection is back: the frames an early stop held back go on in this round, and the
+      // frames that failed get one more try in it, after the frames not tried yet
       if (parked.length) enqueue(parked.splice(0), true);
+      const again = failed.filter((j) => !triedAgain.has(j));
+      if (again.length) {
+        again.forEach((j) => triedAgain.add(j));
+        failed = failed.filter((j) => !again.includes(j));
+        enqueue(again, true);
+      }
     } else {
       failed.push(i);
       // one missing frame is not the connection: wait for a second failure before saying so
@@ -1401,6 +1524,7 @@ void main(){
       // round waits instead of failing frame by frame (a frame that still arrives resumes it)
       if (!loadedCount && failed.length >= 4) parked.push(...queue.splice(0));
     }
+    checkSpinReady();
     if (queue.length) pump();
     else if (!workers) loadEnded();
   }
@@ -1413,11 +1537,17 @@ void main(){
 
   function loadEnded() {
     loading = false;
+    triedAgain.clear();
     // frames held back by an early stop are missing like the failed ones: the next try asks for them
     if (parked.length) failed.push(...parked.splice(0));
+    // none is on its way now, so a gap of 6 degrees no longer holds the spin
+    checkSpinReady();
     if (!failed.length) { $('loader').classList.add('done'); return; }
     if (!loadedCount) showLoadFail();
     retries++;
+    // a few frames that keep failing do not hold the spin for good: with at most 12 missing after two
+    // more tries the cat turns anyway, with one jump a turn
+    if (!spinReady && retries > 2 && loadedCount >= FRAMES - 12) letSpinGo();
     // the line along the top goes away after two tries: it must not hang there for good
     if (loadedCount && retries > 2) $('loader').classList.add('done');
     clearTimeout(retryTimer);
@@ -1473,7 +1603,7 @@ void main(){
     resize();
     // the front first, then ever finer: every 60, 30, 15, 6 and 3 degrees, then the rest
     const order = [];
-    for (const step of [60, 30, 15, 6, 3, 1]) for (let i = 0; i < FRAMES; i += step) if (!order.includes(i)) order.push(i);
+    for (const step of [...PASSES, 1]) for (let i = 0; i < FRAMES; i += step) if (!order.includes(i)) order.push(i);
     loadRank = new Map(order.map((i, n) => [i, n]));
     enqueue(order);
   } else {
