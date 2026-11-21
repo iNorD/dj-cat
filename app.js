@@ -12,29 +12,32 @@
     { key: 'diamond', name: 'Кристалл' },
   ]; // part id in the frames = index + 1
 
-  // Colors are estimated from the filament makers' product photos.
+  // Colors are estimated from the filament makers' product photos. Khaki, yellow and mint are
+  // matched to photos of the printed cats, against their white headphones.
   const COLORS = {
     W: { name: 'Белый', hex: '#EFEEEA', mat: 'ELEGOO Matte PLA', finish: 'матовый', spec: 0.35, trans: 0 },
     B: { name: 'Чёрный', hex: '#232323', mat: 'ELEGOO Matte PLA', finish: 'матовый', spec: 0.35, trans: 0 },
     P: { name: 'Розовая сакура', hex: '#F4B5CA', mat: 'ELEGOO Matte PLA', finish: 'матовый', spec: 0.35, trans: 0 },
     S: { name: 'Розовый шёлк', hex: '#F07A8E', mat: 'Cactus PLA Silk', finish: 'шёлковый блеск', spec: 1.6, trans: 0 },
-    Y: { name: 'Миндально-жёлтый', hex: '#EDDA8E', mat: 'eSUN PLA+', finish: 'полуматовый', spec: 0.8, trans: 0 },
-    K: { name: 'Светлый хаки', hex: '#C9C1AA', mat: 'eSUN PLA+', finish: 'полуматовый', spec: 0.8, trans: 0 },
-    M: { name: 'Мятный', hex: '#A3DFBD', mat: 'eSUN PLA+', finish: 'полуматовый', spec: 0.8, trans: 0 },
-    O: { name: 'Оливковый', hex: '#7FA063', mat: 'ELEGOO PETG', finish: 'полупрозрачный, глянцевый', spec: 1.5, trans: 0.35 },
+    Y: { name: 'Миндально-жёлтый', hex: '#EEE2AE', mat: 'eSUN PLA+', finish: 'полуматовый', spec: 0.8, trans: 0 },
+    K: { name: 'Светлый хаки', hex: '#E1DDCB', mat: 'eSUN PLA+', finish: 'полуматовый', spec: 0.8, trans: 0 },
+    M: { name: 'Мятный', hex: '#B4E4C2', mat: 'eSUN PLA+', finish: 'полуматовый', spec: 0.8, trans: 0 },
   };
-  const ORDER = ['W', 'B', 'P', 'S', 'Y', 'K', 'M', 'O'];
+  const ORDER = ['W', 'B', 'P', 'S', 'Y', 'K', 'M'];
+  // Codes made before the olive PETG was dropped: its letter now means mint.
+  const LEGACY = { O: 'M' };
 
   // code = one letter per part in PARTS order
   const PRESETS = [
-    { name: 'Классика', code: 'KKWWBPPO' },
-    { name: 'Снежок', code: 'WWBBBPPO' },
-    { name: 'Чёрный кот', code: 'BBYYYPPO' },
-    { name: 'Сакура', code: 'PPWWBBWO' },
-    { name: 'Лимонный', code: 'YYBBBPPO' },
-    { name: 'Зефир', code: 'WWPPBYPO' },
-    { name: 'Пастель', code: 'YYPPBPWO' },
-    { name: 'Сафари', code: 'KKBOBBOY' },
+    { name: 'Классика', code: 'KKWWBWWM' },
+    { name: 'Ваниль', code: 'YYWWBPPM' },
+    { name: 'Снежок', code: 'WWBBBPPM' },
+    { name: 'Чёрный кот', code: 'BBYYYBPM' },
+    { name: 'Сакура', code: 'PPWWBBWM' },
+    { name: 'Лимонный', code: 'YYBBBPPM' },
+    { name: 'Зефир', code: 'WWPPBYPM' },
+    { name: 'Пастель', code: 'YYPPBPWM' },
+    { name: 'Сафари', code: 'KKBBBBYY' },
     { name: 'Монохром', code: 'WWBBBBBB' },
     { name: 'Негатив', code: 'BBWWWWWW' },
   ];
@@ -44,7 +47,7 @@
   const linkId = (key) => (key === 'body' || key === 'head' ? 'bh' : 'hp');
 
   // ---------- render constants (must match the offline renderer) ----------
-  const FRAMES = 120; // one every 3 degrees; in motion two neighbors are blended
+  const FRAMES = 360; // one every degree; in motion two neighbors are blended
   const FH = 900;
   const IDW = 1440;
   const IDH = 1800;
@@ -82,12 +85,13 @@
   const CYR = { 'К': 'K', 'В': 'B', 'Р': 'P', 'О': 'O', 'У': 'Y', 'М': 'M', 'Ц': 'W', 'И': 'B', 'З': 'P', 'Ы': 'S', 'Н': 'Y', 'Л': 'K', 'Щ': 'O', 'Ь': 'M' };
   function parseCode(s) {
     const up = String(s || '').toUpperCase();
+    const legacy = (c) => c.replace(/[O]/g, (ch) => LEGACY[ch]);
     // a code inside a longer text: the copied order, a link with #CODE
     const m = up.match(/(?:^|[^A-Z])([WBPSYKMO]{8})(?![A-Z])/);
-    if (m) return m[1];
+    if (m) return legacy(m[1]);
     // a code typed by hand: with spaces, zero instead of O or Cyrillic letters
     const t = up.replace(/0/g, 'O').replace(/[^A-ZА-ЯЁ]/g, '').replace(/[КВРОУМЦИЗЫНЛЩЬ]/g, (ch) => CYR[ch]);
-    return /^[WBPSYKMO]{8}$/.test(t) ? t : null;
+    return /^[WBPSYKMO]{8}$/.test(t) ? legacy(t) : null;
   }
 
   function applyCode(code, opts = {}) {
@@ -306,13 +310,13 @@
     const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
     for (let tries = 0; tries < 50; tries++) {
       const body = pick(['W', 'B', 'P', 'Y', 'K', 'K', 'W', 'M', 'S']);
-      const head = Math.random() < 0.88 ? body : pick(ORDER.filter((c) => c !== 'O'));
+      const head = Math.random() < 0.88 ? body : pick(ORDER);
       const phones = pick(ORDER.filter((c) => c !== body));
       const band = Math.random() < 0.75 ? phones : pick(ORDER);
       const eyes = head === 'B' ? pick(['Y', 'W', 'P']) : (Math.random() < 0.85 ? 'B' : pick(ORDER.filter((c) => c !== head)));
-      const nose = pick(ORDER.filter((c) => c !== head && c !== 'O'));
+      const nose = pick(ORDER.filter((c) => c !== head));
       const bow = pick(ORDER.filter((c) => c !== head));
-      const diamond = Math.random() < 0.6 ? 'O' : pick(ORDER);
+      const diamond = Math.random() < 0.6 ? 'M' : pick(ORDER);
       const code = [body, head, band, phones, eyes, nose, bow, diamond].join('');
       if (code !== codeOf()) return code;
     }
@@ -396,7 +400,7 @@
       e.preventDefault();
       const inp = $('codein');
       const c = parseCode(inp.value);
-      if (!c) { codeErr('Нужен код из 8 латинских букв W, B, P, S, Y, K, M, O, например KKWWBPPO.'); return; }
+      if (!c) { codeErr('Нужен код из 8 латинских букв W, B, P, S, Y, K, M, например KKWWBWWM.'); return; }
       codeErr('');
       inp.value = c;
       // the keyboard closes, and the next Tab goes on from the cat rather than the page bottom;
@@ -667,8 +671,8 @@ void main(){
 
   // Lighting (diffuse over specular) and the part map. The map holds 1440x1800 part ids two to a
   // byte, the left one of each pair in the high four bits, so it is 720x1800.
-  const dsUrl = (i) => `turn/ds${pad(i)}.webp`;
-  const idUrl = (i) => `turn/ip${pad(i)}.png`;
+  const dsUrl = (i) => `turn360/ds${pad(i)}.webp`;
+  const idUrl = (i) => `turn360/ip${pad(i)}.png`;
 
   const loadImg = (src) => new Promise((resolve, reject) => {
     const im = new Image();
@@ -705,12 +709,14 @@ void main(){
   }
 
   // Textures of frame i. Uploading decodes the images again, so recent frames stay on the GPU.
-  // A cache entry may hold only the shading half of a frame: the turn uploads the frame ahead
-  // one half per animation frame, so no single frame of the animation pays for a whole upload.
+  // A cache entry may hold only the shading half of a frame: in motion the frames go up within a
+  // budget per animation frame (see feed), so no single frame of the animation pays for too much.
   let upTick = 0; // textures uploaded since the animation frame began
+  let bitmapUpMs = 2; // how long an upload from a bitmap takes, measured
   function upload(e, half) {
     const b = bitmaps.get(e.i);
     const bmp = b && b[half];
+    const t0 = performance.now();
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);
@@ -719,6 +725,7 @@ void main(){
     e[half === 'ds' ? 'hasDS' : 'hasID'] = true;
     upTick++;
     if (bmp) {
+      bitmapUpMs = bitmapUpMs * 0.8 + (performance.now() - t0) * 0.2;
       bmp.close();
       b[half] = null;
       if (!b.ds && !b.id) bitmaps.delete(e.i);
@@ -730,7 +737,13 @@ void main(){
   // WebKit keeps the <img> uploads: its bitmaps upload slowly and come out color-managed.
   const BITMAPS = typeof createImageBitmap === 'function' && navigator.vendor === 'Google Inc.';
   const bitmaps = new Map(); // frame -> { ds, id, ready }, oldest first
+  const BITMAP_CAP = 6; // frames decoded ahead at most: each takes 10 MB while it waits
+  let wanted = []; // frames the turn needs now and next, most urgent first
+  let feedF = 0; // the turn's frame position at the last animation frame
+  let decodeMs = 60; // how long a frame's bitmaps take to arrive, measured
   let bitmapFails = 0;
+  // frames between two frame positions, either way round
+  const frameDist = (a, b) => { const d = (((a - b) % FRAMES) + FRAMES) % FRAMES; return Math.min(d, FRAMES - d); };
   function dropBitmap(j) {
     const b = bitmaps.get(j);
     if (b.ds) b.ds.close();
@@ -743,10 +756,29 @@ void main(){
     if (!BITMAPS || bitmapFails > 2 || !frames[i] || bitmaps.has(i)) return;
     const k = cache.findIndex((e) => e.i === i);
     if (k >= 0 && cache[k].hasDS && cache[k].hasID) return;
-    const rec = { ds: null, id: null, ready: false };
+    // a decode cannot be called off: only a few run at once, and they keep their places
+    let decoding = 0;
+    const late = Math.max(1500, 8 * decodeMs);
+    for (const [j, b] of bitmaps) {
+      if (b.ready) continue;
+      if (performance.now() - b.t0 > late) { dropBitmap(j); bitmapFails++; } else decoding++;
+    }
+    if (decoding >= 4) return;
+    // room for it: the decoded frame the turn needs least goes, one it no longer wants, far from the angle
+    while (bitmaps.size >= BITMAP_CAP) {
+      let victim = -1;
+      let worst = -1;
+      for (const [j, b] of bitmaps) {
+        if (!b.ready) continue;
+        const score = (wanted.includes(j) ? 0 : FRAMES) + frameDist(j, feedF);
+        if (score > worst) { worst = score; victim = j; }
+      }
+      if (victim < 0) return;
+      dropBitmap(victim);
+    }
+    const rec = { ds: null, id: null, ready: false, t0: performance.now() };
     bitmaps.set(i, rec);
-    // a few frames at most: each takes 10 MB while it waits
-    while (bitmaps.size > 3) dropBitmap(bitmaps.keys().next().value);
+    const t0 = performance.now();
     // the plain uploads still work: after a few failures the bitmaps are left alone
     const fail = () => {
       bitmapFails++;
@@ -760,10 +792,13 @@ void main(){
         .then((v) => ({ v }), () => ({}));
       Promise.all([get(dsUrl(i)), get(idUrl(i))]).then(([a, b]) => {
         const ok = !!(a.v && b.v);
+        if (ok) decodeMs = decodeMs * 0.8 + (performance.now() - t0) * 0.2;
         if (ok && bitmaps.get(i) === rec) {
           rec.ds = a.v;
           rec.id = b.v;
           rec.ready = true;
+          // the turn may be waiting for this frame (a finger holding the cat still sends nothing)
+          requestDraw();
           return;
         }
         if (a.v) a.v.close();
@@ -801,19 +836,41 @@ void main(){
     return e;
   }
 
-  // Half of frame i ahead of the turn, if this animation frame has uploaded nothing yet. Where
-  // the frames are decoded into bitmaps first, the upload waits for them.
-  function prefetch(i) {
+  // What frame i lacks for the turn, within this animation frame's budget: one upload that decodes
+  // an <img> on the main thread, or two from bitmaps decoded ahead, so a ready frame goes up whole.
+  // Where frames are decoded into bitmaps first (Blink), the upload waits for them.
+  function feed(i, mayDecode) {
     if (!frames[i]) return;
     const k = cache.findIndex((e) => e.i === i);
-    // a frame already there counts as used: the turn needs it next, so it must not be evicted
-    if (k >= 0 && cache[k].hasDS && cache[k].hasID) { cache.push(cache.splice(k, 1)[0]); return; }
+    const had = k >= 0 ? cache[k] : null;
+    // a frame already there counts as used: the turn needs it, so it must not be evicted
+    if (had && had.hasDS && had.hasID) { cache.push(cache.splice(k, 1)[0]); return; }
     if (BITMAPS && bitmapFails <= 2) {
       const b = bitmaps.get(i);
-      if (!b) decodeAhead(i);
-      if (!b || !b.ready) return;
+      if (!b) { if (mayDecode) decodeAhead(i); return; }
+      if (!b.ready) {
+        // a decode far past its time (a stalled fetch) gives its place up
+        if (performance.now() - b.t0 > Math.max(1500, 8 * decodeMs)) { dropBitmap(i); bitmapFails++; if (mayDecode) decodeAhead(i); }
+        return;
+      }
+      // a half used up earlier (the frame was evicted since) cannot come back: decode it again
+      const needDS = !had || !had.hasDS;
+      const needID = !had || !had.hasID;
+      if ((needDS && !b.ds) || (needID && !b.id)) {
+        dropBitmap(i);
+        if (mayDecode) decodeAhead(i);
+        return;
+      }
+      // two uploads from bitmaps fit an animation frame on most phones, one on a slow one
+      const budget = bitmapUpMs < 5 ? 2 : 1;
+      // no room left in this animation frame: no slot either, it would evict a frame for nothing
+      if (upTick >= budget) return;
+      const e = slot(i);
+      if (!e.hasDS && upTick < budget) upload(e, 'ds');
+      if (!e.hasID && upTick < budget) upload(e, 'id');
+      return;
     }
-    if (upTick) return;
+    if (upTick >= 1) return;
     const e = slot(i);
     upload(e, e.hasDS ? 'id' : 'ds');
   }
@@ -821,8 +878,47 @@ void main(){
   // The picture for a turntable angle. In motion it blends the two frames around the angle, so the
   // turn is smooth; at rest it is one frame. A missing neighbor falls back to the nearest loaded frame.
   const STEP = 360 / FRAMES;
+  const NEAR = 8; // in motion, frames this close to the angle may stand in for the ones not on the GPU yet
+  let standIn = false; // the picture in motion is not the exact pair for the angle
+
+  // The closest frame already on the GPU on one side of the frame position f (dir -1 below, 1 above),
+  // with its distance in frames.
+  function readyNear(f, dir) {
+    let best = null;
+    let bd = 0;
+    for (const e of cache) {
+      if (!e.hasDS || !e.hasID) continue;
+      const d = ((((dir > 0 ? e.i - f : f - e.i)) % FRAMES) + FRAMES) % FRAMES;
+      if (d <= NEAR && (!best || d < bd)) { bd = d; best = e; }
+    }
+    return best ? { e: best, d: bd } : null;
+  }
+
   function showAngle(a, moving) {
     const f = (((a / STEP) % FRAMES) + FRAMES) % FRAMES;
+    // In motion the picture never waits for an image to be decoded: it blends the closest frames
+    // already on the GPU, and the missing ones go up in the next animation frames (see feed).
+    // A slow phone then turns in a little coarser steps for a moment instead of stalling.
+    standIn = false;
+    if (moving) {
+      const lo = readyNear(f, -1);
+      const hi = readyNear(f, 1);
+      if (lo || hi) {
+        standIn = !(lo && hi && (lo.e === hi.e ? lo.d === 0 : lo.d + hi.d <= 1 + 1e-9));
+        let a0 = (lo || hi).e;
+        let b0 = (hi || lo).e;
+        let m = 0;
+        if (lo && hi && lo.e !== hi.e) {
+          // frames more than 3 degrees apart blend into a double picture: then the nearer one alone
+          if (lo.d + hi.d <= 3) m = lo.d / (lo.d + hi.d);
+          else a0 = b0 = (lo.d <= hi.d ? lo : hi).e;
+        }
+        if (cur !== a0 || shown !== a0.i) { cur = a0; shown = a0.i; dirty = true; }
+        if (nxt !== b0 || shownB !== b0.i) { nxt = b0; shownB = b0.i; dirty = true; }
+        if (m !== mixT) { mixT = m; dirty = true; }
+        return;
+      }
+    }
     let i0 = Math.floor(f) % FRAMES;
     const i1 = (i0 + 1) % FRAMES;
     let t = f - Math.floor(f);
@@ -1006,16 +1102,34 @@ void main(){
     // at rest the cat stops on a whole frame: no blend left on screen
     if (!moving) angle = Math.round(angle / STEP) * STEP;
     showAngle(angle, moving);
-    // the frame after the blended pair, in the direction of the turn, goes to the GPU early
+    // the frames around the angle and ahead of it, in the direction of the turn, go to the GPU early
+    const turned = Math.abs(angle - prevAngle);
     if (angle !== prevAngle) turnDir = angle > prevAngle ? 1 : -1;
     prevAngle = angle;
     if (moving) {
-      const i0 = Math.floor((((angle / STEP) % FRAMES) + FRAMES) % FRAMES) % FRAMES;
+      const f = (((angle / STEP) % FRAMES) + FRAMES) % FRAMES;
+      const i0 = Math.floor(f) % FRAMES;
+      const i1 = (i0 + 1) % FRAMES;
+      feedF = f;
       const ahead = (n) => (i0 + (turnDir > 0 ? 1 + n : -n) + 2 * FRAMES) % FRAMES;
-      prefetch(ahead(1));
-      decodeAhead(ahead(2));
+      // as many frames ahead as the turn passes while a frame decodes and goes up (two animation frames)
+      const tickMs = Math.max(dt, 1);
+      const lead = Math.round((decodeMs * turned) / STEP / tickMs); // frames the turn passes while a frame decodes
+      const look = clamp(Math.ceil(((decodeMs + 2 * tickMs) * turned) / STEP / tickMs) + 1, 2, 8);
+      wanted = [i0, i1];
+      for (let n = 1; n <= look; n++) wanted.push(ahead(n));
+      // a frame with one half on the GPU is useless until it has the other: those go first
+      cache.filter((e) => e.hasDS !== e.hasID && frameDist(e.i, f) <= NEAR)
+        .sort((a, b) => frameDist(a.i, f) - frameDist(b.i, f))
+        .forEach((e) => feed(e.i, false));
+      const fwd = (i) => { const d = ((((turnDir > 0 ? i - f : f - i)) % FRAMES) + FRAMES) % FRAMES; return d > FRAMES / 2 ? d - FRAMES : d; };
+      wanted.forEach((i) => feed(i, fwd(i) >= lead - 1));
+      // a stand-in on screen while the right frames exist: keep going until they are up,
+      // even when a finger holds the cat still and sends nothing
+      if (standIn && frames[i0] && frames[i1]) again = true;
     } else {
       // the cat has stopped: decoded frames ahead are 10 MB each, decode them again on the next turn
+      wanted = [];
       bitmaps.forEach((b, j) => dropBitmap(j));
     }
     if (hiId !== drawnHi || hiAmt !== drawnAmt) dirty = true;
@@ -1171,8 +1285,8 @@ void main(){
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
         e.preventDefault();
         setSpin(false);
-        // 9 degrees a key press, three frames: a whole frame, so nothing is left blended
-        angle += (e.key === 'ArrowRight' ? 1 : -1) * 3 * STEP;
+        // 9 degrees a key press: a whole number of frames, so nothing is left blended
+        angle += (e.key === 'ArrowRight' ? 1 : -1) * 9 * STEP;
         requestDraw();
       }
     });
@@ -1183,6 +1297,9 @@ void main(){
       e.preventDefault();
       glOk = false;
       if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      // the bitmaps decoded ahead would only wait for a turn that is not coming
+      wanted = [];
+      bitmaps.forEach((b, j) => dropBitmap(j));
       cache = [];
       cur = null;
       nxt = null;
@@ -1245,9 +1362,14 @@ void main(){
   const queue = [];
   let workers = 0;
   let loadingFront = false;
+  let parked = []; // frames an early stop of a failing round held back
+  let loadRank = null; // frame -> its place in the first load order: the front, then ever finer
+  const rankOf = (i) => (loadRank && loadRank.has(i) ? loadRank.get(i) : 1e9);
 
   function enqueue(list, quiet) {
     list.forEach((i) => { if (!frames[i] && !queue.includes(i)) queue.push(i); });
+    // tries after a failure keep the first order, so the turn fills in evenly again
+    queue.sort((a, b) => rankOf(a) - rankOf(b));
     const z = queue.indexOf(0);
     if (z > 0) { queue.splice(z, 1); queue.unshift(0); }
     loading = true;
@@ -1269,10 +1391,15 @@ void main(){
     if (ok) {
       // a failure here must not stop the queue
       try { afterFrame(); } catch (e) { /* the next frame tries again */ }
+      // the connection is back: the frames an early stop held back go on in this round
+      if (parked.length) enqueue(parked.splice(0), true);
     } else {
       failed.push(i);
       // one missing frame is not the connection: wait for a second failure before saying so
       if (!loadedCount && failed.length > 1) showLoadFail();
+      // nothing has come and several frames failed: the connection is down, so the rest of the
+      // round waits instead of failing frame by frame (a frame that still arrives resumes it)
+      if (!loadedCount && failed.length >= 4) parked.push(...queue.splice(0));
     }
     if (queue.length) pump();
     else if (!workers) loadEnded();
@@ -1286,6 +1413,8 @@ void main(){
 
   function loadEnded() {
     loading = false;
+    // frames held back by an early stop are missing like the failed ones: the next try asks for them
+    if (parked.length) failed.push(...parked.splice(0));
     if (!failed.length) { $('loader').classList.add('done'); return; }
     if (!loadedCount) showLoadFail();
     retries++;
@@ -1297,7 +1426,7 @@ void main(){
 
   function retryLoad(quiet) {
     quiet = quiet === true;
-    if (!failed.length) {
+    if (!failed.length && !parked.length) {
       // a quiet round has taken the frames: the button or the network coming back shows it loading
       if (!quiet && loading) {
         hideMsg('load');
@@ -1308,7 +1437,7 @@ void main(){
     if (quiet && (loading || document.hidden || navigator.onLine === false || performance.now() - retryAt < 4000)) return;
     clearTimeout(retryTimer);
     retryAt = performance.now();
-    const list = failed;
+    const list = failed.concat(parked.splice(0));
     failed = [];
     if (!quiet) hideMsg('load');
     // the first two rounds keep the line on screen anyway
@@ -1342,9 +1471,10 @@ void main(){
     bindViewer();
     setSpin(spinning);
     resize();
-    // the front first, then ever finer: every 180, 90, 45, 15 degrees, then the rest
+    // the front first, then ever finer: every 60, 30, 15, 6 and 3 degrees, then the rest
     const order = [];
-    for (const step of [60, 30, 15, 5, 1]) for (let i = 0; i < FRAMES; i += step) if (!order.includes(i)) order.push(i);
+    for (const step of [60, 30, 15, 6, 3, 1]) for (let i = 0; i < FRAMES; i += step) if (!order.includes(i)) order.push(i);
+    loadRank = new Map(order.map((i, n) => [i, n]));
     enqueue(order);
   } else {
     showMsg('nogl', 'Браузер не смог включить 3D-просмотр. Цвета всё равно можно выбрать ниже, а текст для заказа скопируется как обычно.');
